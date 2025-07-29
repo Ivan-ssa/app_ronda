@@ -21,7 +21,7 @@ const LOCATION_COLUMN_NAME = 'Localização';
 const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado';
 const DATE_COLUMN_NAME = 'timestamp';
 const OBS_COLUMN_NAME = 'Observações';
-const TAG_COLUMN_NAME = 'Tag'; // Corrigido para corresponder à sua imagem
+const TAG_COLUMN_NAME = 'Tag';
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -79,10 +79,10 @@ if (loadFileButton) {
             try {
                 let rawRondaData = await readExcelFile(file, RONDA_SHEET_NAME);
                 
-                // LÓGICA DE LIMPEZA: Remove linhas vazias ou inválidas da lista de ronda
                 if (Array.isArray(rawRondaData)) {
                     const originalCount = rawRondaData.length;
-                    rondaData = rawRondaData.filter(row => row && (row[SERIAL_COLUMN_NAME] || row['Nº de Série']));
+                    // LÓGICA DE LIMPEZA SIMPLIFICADA
+                    rondaData = rawRondaData.filter(row => row && row[SERIAL_COLUMN_NAME]);
                     console.log(`Dados da aba "${RONDA_SHEET_NAME}" carregados. ${originalCount} linhas lidas, ${rondaData.length} registos válidos retidos.`);
                 } else {
                     rondaData = [];
@@ -255,21 +255,21 @@ if (confirmItemButton) {
 
         const sn = normalizeId(currentEquipment[SERIAL_COLUMN_NAME]);
         if (!sn) {
-            alert("Erro: Equipamento selecionado não possui um Número de Série válido.");
+            alert("Erro: Este equipamento não pode ser adicionado porque não possui um Número de Série no ficheiro mestre.");
             return;
         }
         const originalSector = String(currentEquipment.Setor || '').trim();
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
         const currentRondaSector = rondaSectorSelect.value;
-        const tagValue = currentEquipment[TAG_COLUMN_NAME] || ''; // Pega o valor da TAG
+        const tagValue = currentEquipment[TAG_COLUMN_NAME] || '';
 
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
         const timestamp = new Date();
 
         if (itemEmRonda) {
-            itemEmRonda[TAG_COLUMN_NAME] = tagValue; // Atualiza a TAG
+            itemEmRonda[TAG_COLUMN_NAME] = tagValue;
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
             itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation;
             itemEmRonda[FOUND_SECTOR_COLUMN_NAME] = currentRondaSector;
@@ -280,7 +280,7 @@ if (confirmItemButton) {
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
         } else {
             rondaData.push({
-                [TAG_COLUMN_NAME]: tagValue, // Adiciona a TAG
+                [TAG_COLUMN_NAME]: tagValue,
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
                 'Equipamento': currentEquipment.Equipamento,
@@ -304,13 +304,20 @@ if (confirmItemButton) {
     });
 }
 
+// FUNÇÃO DE EXIBIÇÃO MELHORADA
 function displayEquipment(equipment) {
     currentEquipment = equipment;
+
+    // AVISO IMEDIATO: Verifica se o equipamento encontrado tem um Nº de Série.
+    if (!equipment[SERIAL_COLUMN_NAME]) {
+        alert("Atenção: O equipamento encontrado pelo património não possui um Número de Série registado. Não será possível adicioná-lo à ronda.");
+    }
+
     if (equipmentDetails) {
         const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
         equipmentDetails.innerHTML = `
             <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
-            <p><strong>Nº Série:</strong> ${equipment[SERIAL_COLUMN_NAME] || 'N/A'}</p>
+            <p><strong>Nº Série:</strong> ${equipment[SERIAL_COLUMN_NAME] || '<span style="color:red; font-weight:bold;">EM FALTA</span>'}</p>
             <p><strong>Património:</strong> ${equipment[PATRIMONIO_COLUMN_NAME] || 'N/A'}</p>
             <p><strong>Setor Original:</strong> ${equipment.Setor || 'N/A'}</p>
             <p style="font-weight: bold; color: ${isInativo ? 'red' : 'green'};">
