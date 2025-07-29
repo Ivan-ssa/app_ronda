@@ -1,10 +1,10 @@
-// js/ronda_mobile.js (VERSÃO COM LÓGICA DE ATUALIZAÇÃO DETALHADA)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE ATUALIZAÇÃO GARANTIDA)
 
 import { readExcelFile } from './excelReader.js'; 
 
 // --- ESTADO DA APLICAÇÃO ---
 let allEquipments = [];
-let rondaData = [];
+let rondaData = []; // Esta variável irá conter TODOS os dados da ronda (antigos e novos)
 let mainEquipmentsBySN = new Map();
 let currentRondaItems = [];
 let currentEquipment = null;
@@ -76,8 +76,15 @@ if (loadFileButton) {
         try {
             allEquipments = await readExcelFile(file, EQUIP_SHEET_NAME);
             
+            // Tenta ler a aba de ronda. Se falhar, começa com uma lista vazia.
             try {
                 rondaData = await readExcelFile(file, RONDA_SHEET_NAME);
+                // Garante que rondaData seja sempre um array
+                if (!Array.isArray(rondaData)) {
+                    console.warn('A aba "Ronda" não retornou um array. A iniciar com lista vazia.');
+                    rondaData = [];
+                }
+                console.log(`Dados da aba "Ronda" carregados. Total de ${rondaData.length} registos.`);
             } catch (e) {
                 console.warn(`Aba "${RONDA_SHEET_NAME}" não encontrada. Uma nova será criada ao salvar.`);
                 rondaData = [];
@@ -94,7 +101,7 @@ if (loadFileButton) {
             updateStatus('Ficheiro carregado! Selecione um setor para iniciar.', false);
 
         } catch (error) {
-            const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas existem. Detalhes: ${error.message}`;
+            const errorMessage = `Erro ao ler o ficheiro. Verifique se as abas e colunas estão corretas. Detalhes: ${error.message}`;
             updateStatus(errorMessage, true);
             console.error(errorMessage, error);
         }
@@ -215,29 +222,6 @@ function renderRondaList() {
         rondaList.appendChild(li);
         processedSNs.add(sn);
     });
-
-    const confirmedInactiveItems = rondaData.filter(rondaItem => {
-        const sn = normalizeId(rondaItem[SERIAL_COLUMN_NAME]);
-        const equipment = mainEquipmentsBySN.get(sn);
-        return equipment && 
-               normalizeId(equipment.Setor) === rondaSectorSelect.value && 
-               normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM' && 
-               !processedSNs.has(sn);
-    });
-
-    confirmedInactiveItems.forEach(item => {
-         const sn = normalizeId(item[SERIAL_COLUMN_NAME]);
-         const equipment = mainEquipmentsBySN.get(sn);
-         const equipamentoNome = equipment.Equipamento || 'NOME INDEFINIDO';
-         const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
-         
-         const li = document.createElement('li');
-         li.dataset.sn = sn;
-         li.classList.add('item-localizado');
-         li.style.backgroundColor = '#ffe0b3';
-         li.textContent = `⚠️ ${equipamentoInfo} - INATIVO ENCONTRADO em: ${item[LOCATION_COLUMN_NAME] || 'N/A'}`;
-         rondaList.appendChild(li);
-    });
 }
 
 
@@ -352,11 +336,13 @@ function displayEquipment(equipment) {
 
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
+        // A exportação usa a variável 'rondaData', que contém a lista completa e atualizada.
         if (rondaData.length === 0) {
             alert("Nenhum dado de ronda para exportar.");
             return;
         }
-
+        
+        console.log(`A exportar ${rondaData.length} registos da ronda.`);
         updateStatus('A gerar ficheiro atualizado...');
 
         const dataToExport = rondaData.map(item => {
