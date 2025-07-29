@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM LÓGICA DE BUSCA CORRIGIDA)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE BUSCA E FILTRO DE ATIVOS/INATIVOS)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -6,13 +6,14 @@ import { readExcelFile } from './excelReader.js';
 let allEquipments = [];
 let rondaData = [];
 let mainEquipmentsBySN = new Map();
-let currentRondaItems = [];
+let currentRondaItems = []; // Itens ATIVOS do setor para a ronda
 let currentEquipment = null;
 let currentFile = null;
 
-// --- Nomes das Abas ---
+// --- Nomes das Abas e Colunas ---
 const EQUIP_SHEET_NAME = 'Equipamentos';
 const RONDA_SHEET_NAME = 'Ronda';
+const INACTIVE_COLUMN_NAME = 'Inativo'; // Nome da coluna que indica se o item está inativo
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -40,12 +41,10 @@ function normalizeId(id) {
     return String(id).trim().toUpperCase();
 }
 
-// NOVA FUNÇÃO: Extrai apenas os dígitos de um texto
 function extractNumbers(text) {
     if (!text) return '';
-    return text.replace(/\D/g, '');
+    return String(text).replace(/\D/g, '');
 }
-
 
 function updateStatus(message, isError = false) {
     if (statusMessage) {
@@ -76,6 +75,11 @@ if (loadFileButton) {
                 rondaData = [];
             }
             
+            // Verifica se a coluna de inativos existe no primeiro equipamento
+            if (allEquipments.length > 0 && allEquipments[0][INACTIVE_COLUMN_NAME] === undefined) {
+                 updateStatus(`Aviso: A coluna "${INACTIVE_COLUMN_NAME}" não foi encontrada. Todos os itens serão considerados ativos.`, true);
+            }
+
             mainEquipmentsBySN.clear();
             allEquipments.forEach(eq => {
                 const sn = normalizeId(eq['Nº de Série'] || eq.NumeroSerie);
@@ -105,7 +109,7 @@ if (startRondaButton) {
 }
 
 // =========================================================================
-// --- LÓGICA DE BUSCA (MODIFICADA) ---
+// --- LÓGICA DE BUSCA (CORRIGIDA) ---
 // =========================================================================
 if (searchForm) {
     searchForm.addEventListener('submit', (e) => {
@@ -113,21 +117,27 @@ if (searchForm) {
         const searchTerm = normalizeId(searchInput.value);
         if (!searchTerm) return;
 
-        // A busca agora é feita em duas etapas:
-        // 1. Tenta encontrar pelo Nº de Série (usando o Map, que é mais rápido).
-        // 2. Se não encontrar, tenta encontrar pelo número do Patrimônio (extraindo apenas os dígitos).
-        const found = mainEquipmentsBySN.get(searchTerm) || 
-                      allEquipments.find(eq => {
-                          // Pega o valor da coluna 'Patrimonio'
-                          const patrimonioValue = eq.Patrimonio;
-                          if (!patrimonioValue) return false;
-                          
-                          // Extrai apenas os números do valor do patrimônio
-                          const patrimonioNumbers = extractNumbers(String(patrimonioValue));
-                          
-                          // Compara os números extraídos com o termo de busca
-                          return patrimonioNumbers === searchTerm;
-                      });
+        // 1. Primeiro, tenta encontrar pelo Nº de Série exato (rápido e aceita letras/números)
+        let found = mainEquipmentsBySN.get(searchTerm);
+
+        // 2. Se não encontrou, tenta procurar pelo número do Patrimônio
+        if (!found) {
+            // Extrai apenas os números do termo de busca, caso o usuário leia "PAT 12345"
+            const searchNumbers = extractNumbers(searchTerm);
+            
+            if (searchNumbers) { // Só busca por patrimônio se o termo de busca contiver números
+                found = allEquipments.find(eq => {
+                    const patrimonioValue = eq.Patrimonio;
+                    if (!patrimonioValue) return false;
+                    
+                    // Extrai os números da coluna Patrimônio do arquivo
+                    const patrimonioNumbers = extractNumbers(String(patrimonioValue));
+                    
+                    // Compara apenas os números
+                    return patrimonioNumbers && patrimonioNumbers === searchNumbers;
+                });
+            }
+        }
         
         if (found) {
             displayEquipment(found);
@@ -162,10 +172,14 @@ function startRonda(sector) {
             return;
         }
         
-        currentRondaItems = allEquipments.filter(eq => String(eq.Setor || '').trim() === sector);
+        // MODIFICADO: Filtra apenas os equipamentos ATIVOS para a ronda
+        currentRondaItems = allEquipments.filter(eq => 
+            String(eq.Setor || '').trim() === sector && 
+            normalizeId(eq[INACTIVE_COLUMN_NAME]) !== 'SIM'
+        );
         
         if (currentRondaItems.length === 0) {
-            alert(`Nenhum equipamento encontrado para o setor "${sector}". Verifique o arquivo Excel.`);
+            alert(`Nenhum equipamento ATIVO encontrado para o setor "${sector}". A ronda incluirá apenas itens inativos que forem encontrados.`);
         }
 
         rondaSection.classList.remove('hidden');
@@ -188,38 +202,56 @@ function renderRondaList() {
     if (!rondaList) return;
     rondaList.innerHTML = '';
 
-    currentRondaItems.forEach(item => {
-        try {
-            const li = document.createElement('li');
-            
-            if (!item['Nº de Série'] && !item.NumeroSerie) {
-                console.warn("Item da lista de equipamentos está sem 'Nº de Série':", item);
-                return;
-            }
-            const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
-            const equipamentoNome = item.Equipamento || 'NOME INDEFINIDO';
-            const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
+    const processedSNs = new Set();
 
-            const itemRondaInfo = rondaData.find(r => {
-                if (!r || !r['Nº de Série']) return false;
-                return normalizeId(r['Nº de Série']) === sn;
-            });
-            
-            li.dataset.sn = sn;
-            
-            if (itemRondaInfo && itemRondaInfo.Status === 'Localizado') {
-                li.classList.add('item-localizado');
-                li.textContent = `✅ ${equipamentoInfo} - Verificado em: ${itemRondaInfo['Localização Encontrada'] || 'N/A'}`;
-            } else {
-                li.classList.add('item-nao-localizado');
-                li.textContent = `❓ ${equipamentoInfo}`;
-            }
-            rondaList.appendChild(li);
-        } catch (error) {
-            console.error("Erro ao processar um item da lista de ronda:", item, error);
+    // 1. Renderiza os itens ATIVOS da ronda (currentRondaItems)
+    currentRondaItems.forEach(item => {
+        const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
+        if (!sn) return;
+
+        const li = document.createElement('li');
+        const equipamentoNome = item.Equipamento || 'NOME INDEFINIDO';
+        const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
+        const itemRondaInfo = rondaData.find(r => normalizeId(r['Nº de Série']) === sn);
+        
+        li.dataset.sn = sn;
+        
+        if (itemRondaInfo && itemRondaInfo.Status === 'Localizado') {
+            li.classList.add('item-localizado');
+            li.textContent = `✅ ${equipamentoInfo} - Verificado em: ${itemRondaInfo['Localização Encontrada'] || 'N/A'}`;
+        } else {
+            li.classList.add('item-nao-localizado');
+            li.textContent = `❓ ${equipamentoInfo}`;
         }
+        rondaList.appendChild(li);
+        processedSNs.add(sn);
+    });
+
+    // 2. Renderiza os itens INATIVOS que foram encontrados na ronda
+    const confirmedInactiveItems = rondaData.filter(rondaItem => {
+        const sn = normalizeId(rondaItem['Nº de Série']);
+        const equipment = mainEquipmentsBySN.get(sn);
+        return equipment && // O equipamento existe na lista mestre
+               normalizeId(equipment.Setor) === rondaSectorSelect.value && // Pertence ao setor atual
+               normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM' && // Está marcado como inativo
+               !processedSNs.has(sn); // E ainda não foi processado
+    });
+
+    confirmedInactiveItems.forEach(item => {
+         const sn = normalizeId(item['Nº de Série']);
+         const equipment = mainEquipmentsBySN.get(sn);
+         const equipamentoNome = equipment.Equipamento || 'NOME INDEFINIDO';
+         const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
+         
+         const li = document.createElement('li');
+         li.dataset.sn = sn;
+         li.classList.add('item-localizado'); // Marca como localizado
+         li.style.backgroundColor = '#ffe0b3'; // Cor laranja para destacar que era inativo
+         li.textContent = `⚠️ ${equipamentoInfo} - INATIVO ENCONTRADO em: ${item['Localização Encontrada'] || 'N/A'}`;
+         rondaList.appendChild(li);
     });
 }
+
 
 function updateRondaCounter() {
     if (!rondaCounter) return;
@@ -230,12 +262,13 @@ function updateRondaCounter() {
                 .map(r => normalizeId(r['Nº de Série']))
         );
 
-        const confirmedInSector = currentRondaItems.filter(item => {
-            if (!item || (!item['Nº de Série'] && !item.NumeroSerie)) return false;
-            return confirmedSns.has(normalizeId(item['Nº de Série'] || item.NumeroSerie));
+        // O contador agora reflete o progresso apenas dos itens ATIVOS
+        const confirmedInActiveList = currentRondaItems.filter(item => {
+            const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
+            return confirmedSns.has(sn);
         }).length;
         
-        rondaCounter.textContent = `${confirmedInSector} / ${currentRondaItems.length}`;
+        rondaCounter.textContent = `${confirmedInActiveList} / ${currentRondaItems.length}`;
     } catch (error) {
         console.error("Erro ao atualizar o contador da ronda:", error);
         rondaCounter.textContent = 'Erro!';
@@ -292,11 +325,15 @@ if (confirmItemButton) {
 function displayEquipment(equipment) {
     currentEquipment = equipment;
     if (equipmentDetails) {
+        const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
         equipmentDetails.innerHTML = `
             <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
             <p><strong>Nº Série:</strong> ${equipment['Nº de Série'] || equipment.NumeroSerie || 'N/A'}</p>
             <p><strong>Patrimônio:</strong> ${equipment.Patrimonio || 'N/A'}</p>
             <p><strong>Setor Original:</strong> ${equipment.Setor || 'N/A'}</p>
+            <p style="font-weight: bold; color: ${isInativo ? 'red' : 'green'};">
+                <strong>Status:</strong> ${isInativo ? 'INATIVO' : 'ATIVO'}
+            </p>
         `;
     }
     if (searchResult) {
@@ -306,7 +343,6 @@ function displayEquipment(equipment) {
     obsInput.value = '';
     locationInput.focus();
 }
-
 
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
