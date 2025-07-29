@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM BUSCA DE PATRIMÔNIO CORRIGIDA)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE STATUS E ATUALIZAÇÃO REFORÇADA)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -16,6 +16,11 @@ const RONDA_SHEET_NAME = 'Ronda';
 const SERIAL_COLUMN_NAME = 'Nº Série';
 const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
+const STATUS_COLUMN_NAME = 'Status'; // Coluna de Status na aba Ronda
+const LOCATION_COLUMN_NAME = 'Localização Encontrada'; // Coluna de Localização na aba Ronda
+const DATE_COLUMN_NAME = 'Data da Verificação'; // Coluna de Data na aba Ronda
+const OBS_COLUMN_NAME = 'Observações'; // Coluna de Observações na aba Ronda
+
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -61,11 +66,11 @@ if (loadFileButton) {
     loadFileButton.addEventListener('click', async () => {
         const file = masterFileInput.files[0];
         if (!file) {
-            updateStatus('Por favor, selecione um arquivo.', true);
+            updateStatus('Por favor, selecione um ficheiro.', true);
             return;
         }
         currentFile = file;
-        updateStatus('Lendo arquivo de dados...');
+        updateStatus('A ler ficheiro de dados...');
 
         try {
             allEquipments = await readExcelFile(file, EQUIP_SHEET_NAME);
@@ -92,7 +97,7 @@ if (loadFileButton) {
 
             populateSectorSelect(allEquipments);
             sectorSelectorSection.classList.remove('hidden');
-            updateStatus('Arquivo carregado! Selecione um setor para iniciar.', false);
+            updateStatus('Ficheiro carregado! Selecione um setor para iniciar.', false);
 
         } catch (error) {
             const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas existem. Detalhes: ${error.message}`;
@@ -112,23 +117,18 @@ if (startRondaButton) {
     });
 }
 
-// =========================================================================
-// --- LÓGICA DE BUSCA (COM ZEROS À ESQUERDA CORRIGIDO) ---
-// =========================================================================
 if (searchForm) {
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const searchTerm = normalizeId(searchInput.value);
         if (!searchTerm) return;
 
-        // 1. Tenta encontrar pelo Nº de Série exato
         let found = mainEquipmentsBySN.get(searchTerm);
 
-        // 2. Se não encontrou, tenta pelo número do Patrimônio (comparando como número)
         if (!found) {
             const searchAsNumber = parseInt(extractNumbers(searchTerm), 10);
             
-            if (!isNaN(searchAsNumber)) { // Procede apenas se o termo de busca for um número válido
+            if (!isNaN(searchAsNumber)) {
                 found = allEquipments.find(eq => {
                     const patrimonioValue = eq[PATRIMONIO_COLUMN_NAME];
                     if (!patrimonioValue) return false;
@@ -143,7 +143,7 @@ if (searchForm) {
         if (found) {
             displayEquipment(found);
         } else {
-            alert('Equipamento não encontrado na lista mestre (Nº de Série ou Patrimônio).');
+            alert('Equipamento não encontrado na lista mestre (Nº de Série ou Património).');
             searchResult.classList.add('hidden');
             currentEquipment = null;
         }
@@ -198,6 +198,7 @@ function startRonda(sector) {
     }
 }
 
+// FUNÇÃO DE RENDERIZAÇÃO MELHORADA
 function renderRondaList() {
     if (!rondaList) return;
     rondaList.innerHTML = '';
@@ -215,9 +216,10 @@ function renderRondaList() {
         
         li.dataset.sn = sn;
         
-        if (itemRondaInfo && itemRondaInfo.Status === 'Localizado') {
+        // LÓGICA DE VERIFICAÇÃO MELHORADA: usa normalizeId para o status
+        if (itemRondaInfo && normalizeId(itemRondaInfo[STATUS_COLUMN_NAME]) === 'LOCALIZADO') {
             li.classList.add('item-localizado');
-            li.textContent = `✅ ${equipamentoInfo} - Verificado em: ${itemRondaInfo['Localização Encontrada'] || 'N/A'}`;
+            li.textContent = `✅ ${equipamentoInfo} - Verificado em: ${itemRondaInfo[LOCATION_COLUMN_NAME] || 'N/A'}`;
         } else {
             li.classList.add('item-nao-localizado');
             li.textContent = `❓ ${equipamentoInfo}`;
@@ -245,7 +247,7 @@ function renderRondaList() {
          li.dataset.sn = sn;
          li.classList.add('item-localizado');
          li.style.backgroundColor = '#ffe0b3';
-         li.textContent = `⚠️ ${equipamentoInfo} - INATIVO ENCONTRADO em: ${item['Localização Encontrada'] || 'N/A'}`;
+         li.textContent = `⚠️ ${equipamentoInfo} - INATIVO ENCONTRADO em: ${item[LOCATION_COLUMN_NAME] || 'N/A'}`;
          rondaList.appendChild(li);
     });
 }
@@ -256,7 +258,7 @@ function updateRondaCounter() {
     try {
         const confirmedSns = new Set(
             rondaData
-                .filter(r => r && r.Status === 'Localizado' && r[SERIAL_COLUMN_NAME])
+                .filter(r => r && normalizeId(r[STATUS_COLUMN_NAME]) === 'LOCALIZADO' && r[SERIAL_COLUMN_NAME])
                 .map(r => normalizeId(r[SERIAL_COLUMN_NAME]))
         );
 
@@ -272,9 +274,7 @@ function updateRondaCounter() {
     }
 }
 
-// =========================================================================
-// --- LÓGICA DE CONFIRMAÇÃO (ATUALIZA OU ADICIONA) ---
-// =========================================================================
+// LÓGICA DE CONFIRMAÇÃO REFORÇADA
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -288,30 +288,29 @@ if (confirmItemButton) {
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
 
-        // Procura se o item já existe na lista de dados da ronda
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
-        if (itemEmRonda) { // Se JÁ EXISTE, apenas atualiza os campos
-            console.log("Item encontrado na ronda. Atualizando:", sn);
-            itemEmRonda.Status = 'Localizado';
-            itemEmRonda['Localização Encontrada'] = foundLocation || originalSector;
+        if (itemEmRonda) {
+            console.log(`Item "${sn}" já existe na ronda. A ATUALIZAR dados.`);
+            itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
+            itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation || originalSector;
             itemEmRonda['Setor Original'] = originalSector;
-            itemEmRonda['Observações'] = obsInput.value.trim();
-            itemEmRonda['Data da Verificação'] = new Date().toLocaleString('pt-BR');
+            itemEmRonda[OBS_COLUMN_NAME] = obsInput.value.trim();
+            itemEmRonda[DATE_COLUMN_NAME] = new Date().toLocaleString('pt-BR');
             itemEmRonda[PATRIMONIO_COLUMN_NAME] = patrimonio;
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
 
-        } else { // Se NÃO EXISTE, adiciona um novo registro na lista
-            console.log("Item não encontrado na ronda. Adicionando novo:", sn);
+        } else {
+            console.log(`Item "${sn}" não encontrado na ronda. A ADICIONAR novo registo.`);
             rondaData.push({
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
                 'Equipamento': currentEquipment.Equipamento,
-                'Status': 'Localizado',
+                [STATUS_COLUMN_NAME]: 'Localizado',
                 'Setor Original': originalSector,
-                'Localização Encontrada': foundLocation || originalSector,
-                'Observações': obsInput.value.trim(),
-                'Data da Verificação': new Date().toLocaleString('pt-BR')
+                [LOCATION_COLUMN_NAME]: foundLocation || originalSector,
+                [OBS_COLUMN_NAME]: obsInput.value.trim(),
+                [DATE_COLUMN_NAME]: new Date().toLocaleString('pt-BR')
             });
         }
         
@@ -333,7 +332,7 @@ function displayEquipment(equipment) {
         equipmentDetails.innerHTML = `
             <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
             <p><strong>Nº Série:</strong> ${equipment[SERIAL_COLUMN_NAME] || 'N/A'}</p>
-            <p><strong>Patrimônio:</strong> ${equipment[PATRIMONIO_COLUMN_NAME] || 'N/A'}</p>
+            <p><strong>Património:</strong> ${equipment[PATRIMONIO_COLUMN_NAME] || 'N/A'}</p>
             <p><strong>Setor Original:</strong> ${equipment.Setor || 'N/A'}</p>
             <p style="font-weight: bold; color: ${isInativo ? 'red' : 'green'};">
                 <strong>Status:</strong> ${isInativo ? 'INATIVO' : 'ATIVO'}
@@ -355,7 +354,7 @@ if (exportRondaButton) {
             return;
         }
 
-        updateStatus('Gerando arquivo atualizado...');
+        updateStatus('A gerar ficheiro atualizado...');
 
         const workbook = XLSX.utils.book_new();
         const wsEquipamentos = XLSX.utils.json_to_sheet(allEquipments);
@@ -368,6 +367,6 @@ if (exportRondaButton) {
         const fileName = currentFile ? currentFile.name : `Ronda_Atualizada_${dataFormatada}.xlsx`;
         
         XLSX.writeFile(workbook, fileName);
-        updateStatus('Arquivo de ronda atualizado e salvo com sucesso!', false);
+        updateStatus('Ficheiro de ronda atualizado e salvo com sucesso!', false);
     });
 }
