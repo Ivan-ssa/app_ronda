@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM BUSCA E LÓGICA DE DADOS CORRIGIDA)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE DADOS E EXPORTAÇÃO CORRIGIDA)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -13,7 +13,6 @@ let currentFile = null;
 // --- Nomes das Abas e Colunas ---
 const EQUIP_SHEET_NAME = 'Equipamentos';
 const RONDA_SHEET_NAME = 'Ronda';
-// Estes são os nomes PREFERIDOS, mas a lógica agora é mais flexível
 const SERIAL_COLUMN_NAME = 'Nº de Série'; 
 const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
@@ -23,6 +22,9 @@ const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado';
 const DATE_COLUMN_NAME = 'timestamp';
 const OBS_COLUMN_NAME = 'Observações';
 const TAG_COLUMN_NAME = 'Tag';
+const EXPORT_DATE_COLUMN = 'Data da Ronda';
+const EXPORT_TIME_COLUMN = 'Hora da Ronda';
+
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -55,11 +57,9 @@ function extractNumbers(text) {
     return String(text).replace(/\D/g, '');
 }
 
-// NOVA FUNÇÃO ROBUSTA PARA OBTER O NÚMERO DE SÉRIE
 function getSerialNumber(equipment) {
     if (!equipment) return null;
-    // Tenta encontrar o número de série usando os nomes de coluna mais comuns
-    const sn = equipment['Nº de Série'] || equipment['Nº Série'] || equipment['NumeroSerie'];
+    const sn = equipment[SERIAL_COLUMN_NAME] || equipment['Nº Série'];
     return normalizeId(sn);
 }
 
@@ -85,10 +85,44 @@ if (loadFileButton) {
         try {
             allEquipments = await readExcelFile(file, EQUIP_SHEET_NAME);
             
+            mainEquipmentsBySN.clear();
+            allEquipments.forEach(eq => {
+                const sn = getSerialNumber(eq);
+                if (sn) mainEquipmentsBySN.set(sn, eq);
+            });
+
             try {
                 let rawRondaData = await readExcelFile(file, RONDA_SHEET_NAME);
+                
+                // LÓGICA DE ENRIQUECIMENTO E LIMPEZA
                 if (Array.isArray(rawRondaData)) {
-                    rondaData = rawRondaData.filter(row => row && getSerialNumber(row));
+                    rondaData = rawRondaData
+                        .map(rondaItem => {
+                            const sn = getSerialNumber(rondaItem);
+                            if (!sn) return null; // Ignora linhas sem SN
+
+                            const masterInfo = mainEquipmentsBySN.get(sn);
+                            if (!masterInfo) return rondaItem; // Mantém o item da ronda mesmo que não esteja no mestre
+
+                            // Converte data/hora antigas para timestamp
+                            let timestamp = null;
+                            if (rondaItem[EXPORT_DATE_COLUMN]) {
+                                const dateParts = String(rondaItem[EXPORT_DATE_COLUMN]).split('/');
+                                const timeParts = String(rondaItem[EXPORT_TIME_COLUMN] || '00:00').split(':');
+                                if (dateParts.length === 3) {
+                                    // Formato DD/MM/YYYY
+                                    timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0] || 0, timeParts[1] || 0);
+                                }
+                            }
+
+                            // Junta a informação do mestre (como Tag e Setor Original) com a da ronda
+                            return {
+                                ...masterInfo, // Base com Tag, Setor Original, etc.
+                                ...rondaItem,  // Sobrescreve com os dados da ronda (Status, Localização, etc.)
+                                [DATE_COLUMN_NAME]: timestamp || rondaItem[DATE_COLUMN_NAME] // Usa a data convertida ou a existente
+                            };
+                        })
+                        .filter(Boolean); // Remove itens nulos
                 } else {
                     rondaData = [];
                 }
@@ -98,12 +132,6 @@ if (loadFileButton) {
                 rondaData = [];
             }
             
-            mainEquipmentsBySN.clear();
-            allEquipments.forEach(eq => {
-                const sn = getSerialNumber(eq); // Usa a nova função robusta
-                if (sn) mainEquipmentsBySN.set(sn, eq);
-            });
-
             populateSectorSelect(allEquipments);
             sectorSelectorSection.classList.remove('hidden');
             updateStatus('Ficheiro carregado! Selecione um setor para iniciar.', false);
@@ -126,7 +154,6 @@ if (startRondaButton) {
     });
 }
 
-// LÓGICA DE BUSCA CORRIGIDA
 if (searchForm) {
     searchForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -209,7 +236,7 @@ function renderRondaList() {
     rondaList.innerHTML = '';
 
     currentRondaItems.forEach(item => {
-        const sn = getSerialNumber(item); // Usa a nova função robusta
+        const sn = getSerialNumber(item);
         if (!sn) return;
 
         const li = document.createElement('li');
@@ -252,34 +279,26 @@ function updateRondaCounter() {
     }
 }
 
-// LÓGICA DE CONFIRMAÇÃO CORRIGIDA
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
 
-        const sn = getSerialNumber(currentEquipment); // Usa a nova função robusta
+        const sn = getSerialNumber(currentEquipment);
         if (!sn) {
             const patrimonio = currentEquipment[PATRIMONIO_COLUMN_NAME] || 'desconhecido';
-            alert(`Ação bloqueada: O equipamento com património "${patrimonio}" não tem um Nº de Série válido no ficheiro mestre. Verifique os dados e tente novamente.`);
+            alert(`Ação bloqueada: O equipamento com património "${patrimonio}" não tem um Nº de Série válido no ficheiro mestre.`);
             return;
         }
-        const originalSector = String(currentEquipment.Setor || '').trim();
+        
         const foundLocation = locationInput.value.trim().toUpperCase();
-        const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
         const currentRondaSector = rondaSectorSelect.value;
-        const tagValue = currentEquipment[TAG_COLUMN_NAME] || '';
+        const timestamp = new Date();
 
         let itemEmRonda = rondaData.find(item => getSerialNumber(item) === sn);
 
-        const timestamp = new Date();
-
         const dataObject = {
-            [TAG_COLUMN_NAME]: tagValue,
-            [SERIAL_COLUMN_NAME]: sn,
-            [PATRIMONIO_COLUMN_NAME]: patrimonio,
-            'Equipamento': currentEquipment.Equipamento,
+            ...currentEquipment, // Pega todos os dados do mestre (Tag, Setor Original, etc.)
             [STATUS_COLUMN_NAME]: 'Localizado',
-            'Setor Original': originalSector,
             [LOCATION_COLUMN_NAME]: foundLocation,
             [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector,
             [OBS_COLUMN_NAME]: obsInput.value.trim(),
@@ -287,10 +306,8 @@ if (confirmItemButton) {
         };
 
         if (itemEmRonda) {
-            // Atualiza o objeto existente com os novos dados
             Object.assign(itemEmRonda, dataObject);
         } else {
-            // Adiciona o novo objeto à lista
             rondaData.push(dataObject);
         }
         
@@ -305,10 +322,9 @@ if (confirmItemButton) {
     });
 }
 
-// FUNÇÃO DE EXIBIÇÃO CORRIGIDA
 function displayEquipment(equipment) {
     currentEquipment = equipment;
-    const sn = getSerialNumber(equipment); // Usa a nova função robusta
+    const sn = getSerialNumber(equipment);
 
     if (equipmentDetails) {
         const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
@@ -336,7 +352,7 @@ function displayEquipment(equipment) {
 
     if (!sn) {
         const patrimonio = equipment[PATRIMONIO_COLUMN_NAME] || 'desconhecido';
-        alert(`Atenção: O equipamento com património "${patrimonio}" não possui um 'Nº de Série' na sua linha do ficheiro Excel. Por favor, corrija os dados no ficheiro para poder adicioná-lo à ronda.`);
+        alert(`Atenção: O equipamento com património "${patrimonio}" não possui um 'Nº de Série' na sua linha do ficheiro Excel.`);
     }
 }
 
@@ -353,15 +369,15 @@ if (exportRondaButton) {
             return {
                 [TAG_COLUMN_NAME]: item[TAG_COLUMN_NAME] || '',
                 'Equipamento': item['Equipamento'] || '',
-                'Setor': item['Setor Original'] || '',
-                'Nº de Série': getSerialNumber(item) || '',
-                'Patrimônio': item[PATRIMONIO_COLUMN_NAME] || '',
-                'Localização': item[LOCATION_COLUMN_NAME] || '',
-                'Setor Localizado': item[FOUND_SECTOR_COLUMN_NAME] || '',
-                'Status': item[STATUS_COLUMN_NAME] || '',
-                'Observações': item[OBS_COLUMN_NAME] || '',
-                'Data da Ronda': timestamp ? timestamp.toLocaleDateString('pt-BR') : '',
-                'Hora da Ronda': timestamp ? timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+                'Setor': item['Setor'] || '', // Usa o 'Setor' do mestre
+                [SERIAL_COLUMN_NAME]: getSerialNumber(item) || '',
+                [PATRIMONIO_COLUMN_NAME]: item[PATRIMONIO_COLUMN_NAME] || '',
+                [LOCATION_COLUMN_NAME]: item[LOCATION_COLUMN_NAME] || '',
+                [FOUND_SECTOR_COLUMN_NAME]: item[FOUND_SECTOR_COLUMN_NAME] || '',
+                [STATUS_COLUMN_NAME]: item[STATUS_COLUMN_NAME] || '',
+                [OBS_COLUMN_NAME]: item[OBS_COLUMN_NAME] || '',
+                [EXPORT_DATE_COLUMN]: timestamp ? timestamp.toLocaleDateString('pt-BR') : '',
+                [EXPORT_TIME_COLUMN]: timestamp ? timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
             };
         });
 
