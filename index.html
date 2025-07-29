@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar Ronda</title>
+    <!-- Links para CSS e Manifesto para "instalar" o app -->
+    <link rel="stylesheet" href="css/mobile_style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <header>
+        <h1>Ronda de Equipamentos</h1>
+    </header>
+    <main>
+        <!-- Secção 1: Carregar o arquivo mestre -->
+        <section id="fileLoaderSection" class="card">
+            <h2>1. Carregar Arquivo Mestre</h2>
+            <input type="file" id="masterFileInput" accept=".xlsx, .xls, .csv, .xlsm">
+            <button id="loadFileButton">Carregar Arquivo</button>
+            <div id="statusMessage" class="status">Aguardando arquivo mestre...</div>
+        </section>
+
+        <!-- Secção 2: Selecionar o Setor -->
+        <section id="sectorSelectorSection" class="card">
+            <h2>2. Selecionar Setor</h2>
+            
+            <select id="rondaSectorSelect">
+                <option value="">Selecione um setor...</option>
+            </select>
+            
+            <button id="startRondaButton">Iniciar Ronda no Setor</button>
+        </section>
+
+        <!-- Secção 3: Buscar e Verificar Equipamento -->
+        <section id="rondaSection" class="card hidden">
+            <h2>3. Buscar e Verificar Equipamento</h2>
+            <form id="searchForm">
+                <input type="search" id="searchInput" placeholder="Ler Nº de Série ou Patrimônio...">
+                <button type="submit">Buscar</button>
+            </form>
+            <div id="searchResult" class="hidden">
+                <h3>Equipamento Encontrado</h3>
+                <div id="equipmentDetails"></div>
+                <label for="locationInput">Localização Encontrada (Opcional):</label>
+                <input type="text" id="locationInput" placeholder="Ex: SALA COMUM, CORREDOR, LEITO 205">
+                <label for="obsInput">Observações:</label>
+                <input type="text" id="obsInput" placeholder="(Opcional)">
+                <button id="confirmItemButton">Confirmar Localização</button>
+            </div>
+        </section>
+
+        <!-- Secção 4: Lista de Itens da Ronda -->
+        <section id="rondaListSection" class="card hidden">
+            <h2>Itens do Setor (<span id="rondaCounter">0</span>)</h2>
+            <ul id="rondaList">
+                <!-- Itens da ronda serão adicionados aqui via JS -->
+            </ul>
+            <button id="exportRondaButton" class="export-button">Compartilhar Ronda</button>
+        </section>
+    </main>
+
+    <!-- Scripts necessários -->
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <script type="module" src="js/ronda_mobile.js"></script>
+</body>
+</html>
