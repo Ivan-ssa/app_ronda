@@ -1,7 +1,5 @@
-// js/ronda_mobile.js (VERSÃO MODIFICADA E MAIS ROBUSTA)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE BUSCA CORRIGIDA)
 
-// Assumindo que excelReader.js existe.
-// Esta importação precisa funcionar. Se houver erro aqui, aparecerá no console.
 import { readExcelFile } from './excelReader.js'; 
 
 // --- ESTADO DA APLICAÇÃO ---
@@ -41,6 +39,13 @@ function normalizeId(id) {
     if (id === null || id === undefined) return '';
     return String(id).trim().toUpperCase();
 }
+
+// NOVA FUNÇÃO: Extrai apenas os dígitos de um texto
+function extractNumbers(text) {
+    if (!text) return '';
+    return text.replace(/\D/g, '');
+}
+
 
 function updateStatus(message, isError = false) {
     if (statusMessage) {
@@ -82,20 +87,54 @@ if (loadFileButton) {
             updateStatus('Arquivo carregado! Selecione um setor para iniciar.', false);
 
         } catch (error) {
-            const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas ('Setor', 'Nº de Série') existem. Detalhes: ${error.message}`;
+            const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas ('Setor', 'Nº de Série', 'Patrimonio') existem. Detalhes: ${error.message}`;
             updateStatus(errorMessage, true);
             console.error(errorMessage, error);
         }
     });
 }
 
-// Adiciona o listener para o botão de iniciar a ronda
 if (startRondaButton) {
     startRondaButton.addEventListener('click', () => {
         if (rondaSectorSelect) {
             startRonda(rondaSectorSelect.value);
         } else {
             alert("Erro crítico: O elemento 'rondaSectorSelect' não foi encontrado.");
+        }
+    });
+}
+
+// =========================================================================
+// --- LÓGICA DE BUSCA (MODIFICADA) ---
+// =========================================================================
+if (searchForm) {
+    searchForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const searchTerm = normalizeId(searchInput.value);
+        if (!searchTerm) return;
+
+        // A busca agora é feita em duas etapas:
+        // 1. Tenta encontrar pelo Nº de Série (usando o Map, que é mais rápido).
+        // 2. Se não encontrar, tenta encontrar pelo número do Patrimônio (extraindo apenas os dígitos).
+        const found = mainEquipmentsBySN.get(searchTerm) || 
+                      allEquipments.find(eq => {
+                          // Pega o valor da coluna 'Patrimonio'
+                          const patrimonioValue = eq.Patrimonio;
+                          if (!patrimonioValue) return false;
+                          
+                          // Extrai apenas os números do valor do patrimônio
+                          const patrimonioNumbers = extractNumbers(String(patrimonioValue));
+                          
+                          // Compara os números extraídos com o termo de busca
+                          return patrimonioNumbers === searchTerm;
+                      });
+        
+        if (found) {
+            displayEquipment(found);
+        } else {
+            alert('Equipamento não encontrado na lista mestre (Nº de Série ou Patrimônio).');
+            searchResult.classList.add('hidden');
+            currentEquipment = null;
         }
     });
 }
@@ -116,7 +155,6 @@ function populateSectorSelect(equipments) {
     });
 }
 
-// FUNÇÃO DE INICIAR RONDA MAIS SEGURA
 function startRonda(sector) {
     try {
         if (!sector) {
@@ -130,11 +168,9 @@ function startRonda(sector) {
             alert(`Nenhum equipamento encontrado para o setor "${sector}". Verifique o arquivo Excel.`);
         }
 
-        // Atualiza a interface gráfica
         rondaSection.classList.remove('hidden');
         rondaListSection.classList.remove('hidden');
 
-        // Chama as funções que podem falhar
         updateRondaCounter();
         renderRondaList();
 
@@ -148,7 +184,6 @@ function startRonda(sector) {
     }
 }
 
-// FUNÇÃO DE RENDERIZAR A LISTA MAIS SEGURA
 function renderRondaList() {
     if (!rondaList) return;
     rondaList.innerHTML = '';
@@ -157,10 +192,9 @@ function renderRondaList() {
         try {
             const li = document.createElement('li');
             
-            // Verifica se as propriedades essenciais existem no item
             if (!item['Nº de Série'] && !item.NumeroSerie) {
                 console.warn("Item da lista de equipamentos está sem 'Nº de Série':", item);
-                return; // Pula este item para não quebrar a aplicação
+                return;
             }
             const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
             const equipamentoNome = item.Equipamento || 'NOME INDEFINIDO';
@@ -168,8 +202,7 @@ function renderRondaList() {
 
             const itemRondaInfo = rondaData.find(r => {
                 if (!r || !r['Nº de Série']) return false;
-                const rondaSn = normalizeId(r['Nº de Série']);
-                return rondaSn === sn;
+                return normalizeId(r['Nº de Série']) === sn;
             });
             
             li.dataset.sn = sn;
@@ -183,13 +216,11 @@ function renderRondaList() {
             }
             rondaList.appendChild(li);
         } catch (error) {
-            // Se um item der erro, loga no console mas não para a execução dos outros
             console.error("Erro ao processar um item da lista de ronda:", item, error);
         }
     });
 }
 
-// FUNÇÃO DE ATUALIZAR O CONTADOR MAIS SEGURA
 function updateRondaCounter() {
     if (!rondaCounter) return;
     try {
@@ -201,8 +232,7 @@ function updateRondaCounter() {
 
         const confirmedInSector = currentRondaItems.filter(item => {
             if (!item || (!item['Nº de Série'] && !item.NumeroSerie)) return false;
-            const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
-            return confirmedSns.has(sn);
+            return confirmedSns.has(normalizeId(item['Nº de Série'] || item.NumeroSerie));
         }).length;
         
         rondaCounter.textContent = `${confirmedInSector} / ${currentRondaItems.length}`;
@@ -212,7 +242,6 @@ function updateRondaCounter() {
     }
 }
 
-// Lógica de confirmação e busca (sem grandes alterações, mas com verificações)
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -257,25 +286,6 @@ if (confirmItemButton) {
         
         renderRondaList();
         updateRondaCounter();
-    });
-}
-
-if (searchForm) {
-    searchForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const searchTerm = normalizeId(searchInput.value);
-        if (!searchTerm) return;
-
-        const found = mainEquipmentsBySN.get(searchTerm) || 
-                      allEquipments.find(eq => normalizeId(eq.Patrimonio) === searchTerm);
-        
-        if (found) {
-            displayEquipment(found);
-        } else {
-            alert('Equipamento não encontrado na lista mestre de equipamentos.');
-            searchResult.classList.add('hidden');
-            currentEquipment = null;
-        }
     });
 }
 
