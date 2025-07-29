@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM LÓGICA DE BUSCA E FILTRO DE ATIVOS/INATIVOS)
+// js/ronda_mobile.js (VERSÃO COM NOMES DE COLUNA CORRIGIDOS)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -6,14 +6,16 @@ import { readExcelFile } from './excelReader.js';
 let allEquipments = [];
 let rondaData = [];
 let mainEquipmentsBySN = new Map();
-let currentRondaItems = []; // Itens ATIVOS do setor para a ronda
+let currentRondaItems = [];
 let currentEquipment = null;
 let currentFile = null;
 
-// --- Nomes das Abas e Colunas ---
+// --- Nomes das Abas e Colunas (CORRIGIDOS) ---
 const EQUIP_SHEET_NAME = 'Equipamentos';
 const RONDA_SHEET_NAME = 'Ronda';
-const INACTIVE_COLUMN_NAME = 'Inativo'; // Nome da coluna que indica se o item está inativo
+const SERIAL_COLUMN_NAME = 'Nº Série';      // Nome da coluna de Nº de Série
+const PATRIMONIO_COLUMN_NAME = 'Patrimônio'; // Nome da coluna de Patrimônio
+const INACTIVE_COLUMN_NAME = 'Inativo';     // Nome da coluna de Inativos
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -75,14 +77,16 @@ if (loadFileButton) {
                 rondaData = [];
             }
             
-            // Verifica se a coluna de inativos existe no primeiro equipamento
-            if (allEquipments.length > 0 && allEquipments[0][INACTIVE_COLUMN_NAME] === undefined) {
-                 updateStatus(`Aviso: A coluna "${INACTIVE_COLUMN_NAME}" não foi encontrada. Todos os itens serão considerados ativos.`, true);
+            if (allEquipments.length > 0 && allEquipments[0][SERIAL_COLUMN_NAME] === undefined) {
+                 updateStatus(`Aviso: A coluna "${SERIAL_COLUMN_NAME}" não foi encontrada. A busca por Nº de Série pode falhar.`, true);
+            }
+            if (allEquipments.length > 0 && allEquipments[0][PATRIMONIO_COLUMN_NAME] === undefined) {
+                 updateStatus(`Aviso: A coluna "${PATRIMONIO_COLUMN_NAME}" não foi encontrada. A busca por Patrimônio pode falhar.`, true);
             }
 
             mainEquipmentsBySN.clear();
             allEquipments.forEach(eq => {
-                const sn = normalizeId(eq['Nº de Série'] || eq.NumeroSerie);
+                const sn = normalizeId(eq[SERIAL_COLUMN_NAME]);
                 if (sn) mainEquipmentsBySN.set(sn, eq);
             });
 
@@ -91,7 +95,7 @@ if (loadFileButton) {
             updateStatus('Arquivo carregado! Selecione um setor para iniciar.', false);
 
         } catch (error) {
-            const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas ('Setor', 'Nº de Série', 'Patrimonio') existem. Detalhes: ${error.message}`;
+            const errorMessage = `Erro ao ler a aba "${EQUIP_SHEET_NAME}". Verifique se a aba e as colunas existem. Detalhes: ${error.message}`;
             updateStatus(errorMessage, true);
             console.error(errorMessage, error);
         }
@@ -109,7 +113,7 @@ if (startRondaButton) {
 }
 
 // =========================================================================
-// --- LÓGICA DE BUSCA (CORRIGIDA) ---
+// --- LÓGICA DE BUSCA (FINAL) ---
 // =========================================================================
 if (searchForm) {
     searchForm.addEventListener('submit', (e) => {
@@ -117,23 +121,17 @@ if (searchForm) {
         const searchTerm = normalizeId(searchInput.value);
         if (!searchTerm) return;
 
-        // 1. Primeiro, tenta encontrar pelo Nº de Série exato (rápido e aceita letras/números)
+        // 1. Tenta encontrar pelo Nº de Série exato
         let found = mainEquipmentsBySN.get(searchTerm);
 
-        // 2. Se não encontrou, tenta procurar pelo número do Patrimônio
+        // 2. Se não encontrou, tenta pelo número do Patrimônio
         if (!found) {
-            // Extrai apenas os números do termo de busca, caso o usuário leia "PAT 12345"
             const searchNumbers = extractNumbers(searchTerm);
-            
-            if (searchNumbers) { // Só busca por patrimônio se o termo de busca contiver números
+            if (searchNumbers) {
                 found = allEquipments.find(eq => {
-                    const patrimonioValue = eq.Patrimonio;
+                    const patrimonioValue = eq[PATRIMONIO_COLUMN_NAME];
                     if (!patrimonioValue) return false;
-                    
-                    // Extrai os números da coluna Patrimônio do arquivo
                     const patrimonioNumbers = extractNumbers(String(patrimonioValue));
-                    
-                    // Compara apenas os números
                     return patrimonioNumbers && patrimonioNumbers === searchNumbers;
                 });
             }
@@ -172,7 +170,6 @@ function startRonda(sector) {
             return;
         }
         
-        // MODIFICADO: Filtra apenas os equipamentos ATIVOS para a ronda
         currentRondaItems = allEquipments.filter(eq => 
             String(eq.Setor || '').trim() === sector && 
             normalizeId(eq[INACTIVE_COLUMN_NAME]) !== 'SIM'
@@ -204,15 +201,14 @@ function renderRondaList() {
 
     const processedSNs = new Set();
 
-    // 1. Renderiza os itens ATIVOS da ronda (currentRondaItems)
     currentRondaItems.forEach(item => {
-        const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
+        const sn = normalizeId(item[SERIAL_COLUMN_NAME]);
         if (!sn) return;
 
         const li = document.createElement('li');
         const equipamentoNome = item.Equipamento || 'NOME INDEFINIDO';
         const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
-        const itemRondaInfo = rondaData.find(r => normalizeId(r['Nº de Série']) === sn);
+        const itemRondaInfo = rondaData.find(r => normalizeId(r[SERIAL_COLUMN_NAME]) === sn);
         
         li.dataset.sn = sn;
         
@@ -227,26 +223,25 @@ function renderRondaList() {
         processedSNs.add(sn);
     });
 
-    // 2. Renderiza os itens INATIVOS que foram encontrados na ronda
     const confirmedInactiveItems = rondaData.filter(rondaItem => {
-        const sn = normalizeId(rondaItem['Nº de Série']);
+        const sn = normalizeId(rondaItem[SERIAL_COLUMN_NAME]);
         const equipment = mainEquipmentsBySN.get(sn);
-        return equipment && // O equipamento existe na lista mestre
-               normalizeId(equipment.Setor) === rondaSectorSelect.value && // Pertence ao setor atual
-               normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM' && // Está marcado como inativo
-               !processedSNs.has(sn); // E ainda não foi processado
+        return equipment && 
+               normalizeId(equipment.Setor) === rondaSectorSelect.value && 
+               normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM' && 
+               !processedSNs.has(sn);
     });
 
     confirmedInactiveItems.forEach(item => {
-         const sn = normalizeId(item['Nº de Série']);
+         const sn = normalizeId(item[SERIAL_COLUMN_NAME]);
          const equipment = mainEquipmentsBySN.get(sn);
          const equipamentoNome = equipment.Equipamento || 'NOME INDEFINIDO';
          const equipamentoInfo = `${equipamentoNome} (SN: ${sn})`;
          
          const li = document.createElement('li');
          li.dataset.sn = sn;
-         li.classList.add('item-localizado'); // Marca como localizado
-         li.style.backgroundColor = '#ffe0b3'; // Cor laranja para destacar que era inativo
+         li.classList.add('item-localizado');
+         li.style.backgroundColor = '#ffe0b3';
          li.textContent = `⚠️ ${equipamentoInfo} - INATIVO ENCONTRADO em: ${item['Localização Encontrada'] || 'N/A'}`;
          rondaList.appendChild(li);
     });
@@ -258,13 +253,12 @@ function updateRondaCounter() {
     try {
         const confirmedSns = new Set(
             rondaData
-                .filter(r => r && r.Status === 'Localizado' && r['Nº de Série'])
-                .map(r => normalizeId(r['Nº de Série']))
+                .filter(r => r && r.Status === 'Localizado' && r[SERIAL_COLUMN_NAME])
+                .map(r => normalizeId(r[SERIAL_COLUMN_NAME]))
         );
 
-        // O contador agora reflete o progresso apenas dos itens ATIVOS
         const confirmedInActiveList = currentRondaItems.filter(item => {
-            const sn = normalizeId(item['Nº de Série'] || item.NumeroSerie);
+            const sn = normalizeId(item[SERIAL_COLUMN_NAME]);
             return confirmedSns.has(sn);
         }).length;
         
@@ -279,16 +273,16 @@ if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
 
-        const sn = normalizeId(currentEquipment['Nº de Série'] || currentEquipment.NumeroSerie);
+        const sn = normalizeId(currentEquipment[SERIAL_COLUMN_NAME]);
         if (!sn) {
             alert("Erro: Equipamento selecionado não possui um Número de Série válido.");
             return;
         }
         const originalSector = String(currentEquipment.Setor || '').trim();
         const foundLocation = locationInput.value.trim().toUpperCase();
-        const patrimonio = normalizeId(currentEquipment.Patrimonio);
+        const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
 
-        let itemEmRonda = rondaData.find(item => normalizeId(item['Nº de Série']) === sn);
+        let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
         if (itemEmRonda) {
             itemEmRonda.Status = 'Localizado';
@@ -296,12 +290,12 @@ if (confirmItemButton) {
             itemEmRonda['Setor Original'] = originalSector;
             itemEmRonda['Observações'] = obsInput.value.trim();
             itemEmRonda['Data da Verificação'] = new Date().toLocaleString('pt-BR');
-            itemEmRonda.Patrimonio = patrimonio;
+            itemEmRonda[PATRIMONIO_COLUMN_NAME] = patrimonio;
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
         } else {
             rondaData.push({
-                'Nº de Série': sn,
-                'Patrimonio': patrimonio,
+                [SERIAL_COLUMN_NAME]: sn,
+                [PATRIMONIO_COLUMN_NAME]: patrimonio,
                 'Equipamento': currentEquipment.Equipamento,
                 'Status': 'Localizado',
                 'Setor Original': originalSector,
@@ -328,8 +322,8 @@ function displayEquipment(equipment) {
         const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
         equipmentDetails.innerHTML = `
             <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
-            <p><strong>Nº Série:</strong> ${equipment['Nº de Série'] || equipment.NumeroSerie || 'N/A'}</p>
-            <p><strong>Patrimônio:</strong> ${equipment.Patrimonio || 'N/A'}</p>
+            <p><strong>Nº Série:</strong> ${equipment[SERIAL_COLUMN_NAME] || 'N/A'}</p>
+            <p><strong>Patrimônio:</strong> ${equipment[PATRIMONIO_COLUMN_NAME] || 'N/A'}</p>
             <p><strong>Setor Original:</strong> ${equipment.Setor || 'N/A'}</p>
             <p style="font-weight: bold; color: ${isInativo ? 'red' : 'green'};">
                 <strong>Status:</strong> ${isInativo ? 'INATIVO' : 'ATIVO'}
