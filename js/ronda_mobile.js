@@ -1,10 +1,10 @@
-// js/ronda_mobile.js (VERSÃO COM LÓGICA DE ATUALIZAÇÃO GARANTIDA)
+// js/ronda_mobile.js (VERSÃO COM EXPORTAÇÃO LIMPA E TAG CORRIGIDA)
 
 import { readExcelFile } from './excelReader.js'; 
 
 // --- ESTADO DA APLICAÇÃO ---
 let allEquipments = [];
-let rondaData = []; // Esta variável irá conter TODOS os dados da ronda (antigos e novos)
+let rondaData = [];
 let mainEquipmentsBySN = new Map();
 let currentRondaItems = [];
 let currentEquipment = null;
@@ -13,15 +13,15 @@ let currentFile = null;
 // --- Nomes das Abas e Colunas ---
 const EQUIP_SHEET_NAME = 'Equipamentos';
 const RONDA_SHEET_NAME = 'Ronda';
-const SERIAL_COLUMN_NAME = 'Nº Série';
+const SERIAL_COLUMN_NAME = 'Nº de Série';
 const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
 const STATUS_COLUMN_NAME = 'Status';
-const LOCATION_COLUMN_NAME = 'Localização Encontrada';
+const LOCATION_COLUMN_NAME = 'Localização';
 const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado';
 const DATE_COLUMN_NAME = 'timestamp';
 const OBS_COLUMN_NAME = 'Observações';
-const TAG_COLUMN_NAME = 'TAG';
+const TAG_COLUMN_NAME = 'Tag'; // Corrigido para corresponder à sua imagem
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -76,18 +76,20 @@ if (loadFileButton) {
         try {
             allEquipments = await readExcelFile(file, EQUIP_SHEET_NAME);
             
-            // Tenta ler a aba de ronda. Se falhar, começa com uma lista vazia.
             try {
-                rondaData = await readExcelFile(file, RONDA_SHEET_NAME);
-                // Garante que rondaData seja sempre um array
-                if (!Array.isArray(rondaData)) {
-                    console.warn('A aba "Ronda" não retornou um array. A iniciar com lista vazia.');
+                let rawRondaData = await readExcelFile(file, RONDA_SHEET_NAME);
+                
+                // LÓGICA DE LIMPEZA: Remove linhas vazias ou inválidas da lista de ronda
+                if (Array.isArray(rawRondaData)) {
+                    const originalCount = rawRondaData.length;
+                    rondaData = rawRondaData.filter(row => row && (row[SERIAL_COLUMN_NAME] || row['Nº de Série']));
+                    console.log(`Dados da aba "${RONDA_SHEET_NAME}" carregados. ${originalCount} linhas lidas, ${rondaData.length} registos válidos retidos.`);
+                } else {
                     rondaData = [];
                 }
-                // MENSAGEM DE DIAGNÓSTICO
-                console.log(`Dados da aba "Ronda" carregados. Total de ${rondaData.length} registos.`);
-            } catch (e) {
-                console.warn(`Aba "${RONDA_SHEET_NAME}" não encontrada. Uma nova será criada ao salvar.`);
+            } catch (rondaError) {
+                console.warn(rondaError.message);
+                updateStatus(`Aviso: ${rondaError.message}. Uma nova aba 'Ronda' será criada ao salvar.`, true);
                 rondaData = [];
             }
             
@@ -101,10 +103,10 @@ if (loadFileButton) {
             sectorSelectorSection.classList.remove('hidden');
             updateStatus('Ficheiro carregado! Selecione um setor para iniciar.', false);
 
-        } catch (error) {
-            const errorMessage = `Erro ao ler o ficheiro. Verifique se as abas e colunas estão corretas. Detalhes: ${error.message}`;
+        } catch (equipError) {
+            const errorMessage = `Erro fatal ao ler a aba "${EQUIP_SHEET_NAME}". Verifique o nome da aba e o ficheiro. Detalhes: ${equipError.message}`;
             updateStatus(errorMessage, true);
-            console.error(errorMessage, error);
+            console.error(errorMessage, equipError);
         }
     });
 }
@@ -247,9 +249,6 @@ function updateRondaCounter() {
     }
 }
 
-// =========================================================================
-// --- LÓGICA DE CONFIRMAÇÃO: ATUALIZAR OU ADICIONAR (UPSERT) ---
-// =========================================================================
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -263,17 +262,14 @@ if (confirmItemButton) {
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
         const currentRondaSector = rondaSectorSelect.value;
+        const tagValue = currentEquipment[TAG_COLUMN_NAME] || ''; // Pega o valor da TAG
 
-        // PASSO 1: Procurar se o equipamento já existe na lista de dados da ronda.
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
         const timestamp = new Date();
 
-        // PASSO 2: Se o item FOI ENCONTRADO, ele entra neste bloco 'if'.
         if (itemEmRonda) {
-            // Ação: ATUALIZAR os dados do item que já existe.
-            // MENSAGEM DE DIAGNÓSTICO
-            console.log(`Item "${sn}" já existe na ronda. A ATUALIZAR dados.`);
+            itemEmRonda[TAG_COLUMN_NAME] = tagValue; // Atualiza a TAG
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
             itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation;
             itemEmRonda[FOUND_SECTOR_COLUMN_NAME] = currentRondaSector;
@@ -282,14 +278,9 @@ if (confirmItemButton) {
             itemEmRonda[DATE_COLUMN_NAME] = timestamp;
             itemEmRonda[PATRIMONIO_COLUMN_NAME] = patrimonio;
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
-            itemEmRonda[TAG_COLUMN_NAME] = currentEquipment[TAG_COLUMN_NAME];
-
-        // PASSO 3: Se o item NÃO FOI ENCONTRADO, ele entra neste bloco 'else'.
         } else {
-            // Ação: ADICIONAR um novo registo à lista de dados da ronda.
-            // MENSAGEM DE DIAGNÓSTICO
-            console.log(`Item "${sn}" não encontrado na ronda. A ADICIONAR novo registo.`);
             rondaData.push({
+                [TAG_COLUMN_NAME]: tagValue, // Adiciona a TAG
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
                 'Equipamento': currentEquipment.Equipamento,
@@ -299,7 +290,6 @@ if (confirmItemButton) {
                 [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector,
                 [OBS_COLUMN_NAME]: obsInput.value.trim(),
                 [DATE_COLUMN_NAME]: timestamp,
-                [TAG_COLUMN_NAME]: currentEquipment[TAG_COLUMN_NAME]
             });
         }
         
@@ -339,13 +329,11 @@ function displayEquipment(equipment) {
 
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
-        // A exportação usa a variável 'rondaData', que contém a lista completa e atualizada.
         if (rondaData.length === 0) {
             alert("Nenhum dado de ronda para exportar.");
             return;
         }
         
-        // MENSAGEM DE DIAGNÓSTICO
         console.log(`A exportar ${rondaData.length} registos da ronda.`);
         updateStatus('A gerar ficheiro atualizado...');
 
@@ -353,7 +341,7 @@ if (exportRondaButton) {
             const timestamp = item[DATE_COLUMN_NAME] ? new Date(item[DATE_COLUMN_NAME]) : null;
             
             return {
-                'Tag': item[TAG_COLUMN_NAME] || '',
+                [TAG_COLUMN_NAME]: item[TAG_COLUMN_NAME] || '',
                 'Equipamento': item['Equipamento'] || '',
                 'Setor': item['Setor Original'] || '',
                 'Nº de Série': item[SERIAL_COLUMN_NAME] || '',
