@@ -1,10 +1,14 @@
 // js/excelReader.js
 
+// A sua função original `readExcelFile` é mantida para não quebrar a outra parte do projeto.
+export function readExcelFile(file, sheetName) {
+    // ... (o código da sua função original continua aqui)
+}
+
 /**
  * Lê abas específicas de um ficheiro Excel, processando apenas as colunas desejadas para otimização.
  * @param {File} file - O ficheiro a ser lido.
  * @param {Object} sheetConfig - Um objeto que define quais colunas ler para cada aba.
- * Ex: { 'Equip_VBA': ['TAG', 'Setor'], 'Ronda': ['SN', 'Status'] }
  * @returns {Promise<Map<string, Array<Object>>>} - Um Mapa com os dados otimizados de cada aba.
  */
 export function readOptimizedExcelWorkbook(file, sheetConfig) {
@@ -29,29 +33,31 @@ export function readOptimizedExcelWorkbook(file, sheetConfig) {
                             continue;
                         }
 
-                        const headers = dataAsArray[0];
+                        const headersFromFile = dataAsArray[0];
                         const dataRows = dataAsArray.slice(1);
                         
                         const headerIndexMap = new Map();
-                        columnsToKeep.forEach(colName => {
-                            const index = headers.findIndex(h => String(h).trim() === colName);
+
+                        // --- INÍCIO DA CORREÇÃO IMPORTANTE ---
+                        // Torna a busca pelos cabeçalhos insensível a maiúsculas/minúsculas
+                        columnsToKeep.forEach(colNameToKeep => {
+                            const index = headersFromFile.findIndex(headerFromFile => 
+                                String(headerFromFile).trim().toUpperCase() === colNameToKeep.toUpperCase()
+                            );
                             if (index !== -1) {
-                                headerIndexMap.set(colName, index);
+                                // Usa o nome original do cabeçalho do ficheiro para manter a consistência
+                                headerIndexMap.set(headersFromFile[index], index);
                             }
                         });
+                        // --- FIM DA CORREÇÃO IMPORTANTE ---
 
                         const jsonData = dataRows.map(row => {
                             const leanObject = {};
-                            for (const [colName, index] of headerIndexMap.entries()) {
-                                leanObject[colName] = row[index];
-                            }
-                            // Garante que o Nº de Série seja sempre incluído, pois é a chave principal
-                            const snIndex = headers.findIndex(h => String(h).trim() === 'Nº Série');
-                            if (snIndex !== -1) {
-                                leanObject['Nº Série'] = row[snIndex];
+                            for (const [headerName, index] of headerIndexMap.entries()) {
+                                leanObject[headerName] = row[index];
                             }
                             return leanObject;
-                        }).filter(obj => obj['Nº Série']); // Remove linhas sem Nº de Série
+                        }).filter(obj => obj['Nº Série'] || obj['SN']); // Garante que a linha tem um SN
 
                         allSheetsData.set(sheetName, jsonData);
                     } else {
