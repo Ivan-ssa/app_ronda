@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM LÓGICA DE STATUS E ATUALIZAÇÃO REFORÇADA)
+// js/ronda_mobile.js (VERSÃO COM EXPORTAÇÃO E LÓGICA DE LOCALIZAÇÃO CORRIGIDAS)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -16,11 +16,11 @@ const RONDA_SHEET_NAME = 'Ronda';
 const SERIAL_COLUMN_NAME = 'Nº Série';
 const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
-const STATUS_COLUMN_NAME = 'Status'; // Coluna de Status na aba Ronda
-const LOCATION_COLUMN_NAME = 'Localização Encontrada'; // Coluna de Localização na aba Ronda
-const DATE_COLUMN_NAME = 'Data da Verificação'; // Coluna de Data na aba Ronda
-const OBS_COLUMN_NAME = 'Observações'; // Coluna de Observações na aba Ronda
-
+const STATUS_COLUMN_NAME = 'Status';
+const LOCATION_COLUMN_NAME = 'Localização Encontrada';
+const DATE_COLUMN_NAME = 'timestamp'; // Armazena o objeto Date completo
+const OBS_COLUMN_NAME = 'Observações';
+const TAG_COLUMN_NAME = 'TAG'; // Coluna TAG no arquivo mestre
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -82,13 +82,6 @@ if (loadFileButton) {
                 rondaData = [];
             }
             
-            if (allEquipments.length > 0 && allEquipments[0][SERIAL_COLUMN_NAME] === undefined) {
-                 updateStatus(`Aviso: A coluna "${SERIAL_COLUMN_NAME}" não foi encontrada.`, true);
-            }
-            if (allEquipments.length > 0 && allEquipments[0][PATRIMONIO_COLUMN_NAME] === undefined) {
-                 updateStatus(`Aviso: A coluna "${PATRIMONIO_COLUMN_NAME}" não foi encontrada.`, true);
-            }
-
             mainEquipmentsBySN.clear();
             allEquipments.forEach(eq => {
                 const sn = normalizeId(eq[SERIAL_COLUMN_NAME]);
@@ -178,10 +171,6 @@ function startRonda(sector) {
             normalizeId(eq[INACTIVE_COLUMN_NAME]) !== 'SIM'
         );
         
-        if (currentRondaItems.length === 0) {
-            alert(`Nenhum equipamento ATIVO encontrado para o setor "${sector}". A ronda incluirá apenas itens inativos que forem encontrados.`);
-        }
-
         rondaSection.classList.remove('hidden');
         rondaListSection.classList.remove('hidden');
 
@@ -193,12 +182,11 @@ function startRonda(sector) {
 
     } catch (error) {
         console.error("Ocorreu um erro ao iniciar a ronda:", error);
-        alert(`Ocorreu um erro ao iniciar a ronda: ${error.message}. Verifique o console (F12) para mais detalhes.`);
+        alert(`Ocorreu um erro ao iniciar a ronda: ${error.message}.`);
         updateStatus(`Erro ao iniciar a ronda: ${error.message}`, true);
     }
 }
 
-// FUNÇÃO DE RENDERIZAÇÃO MELHORADA
 function renderRondaList() {
     if (!rondaList) return;
     rondaList.innerHTML = '';
@@ -216,7 +204,6 @@ function renderRondaList() {
         
         li.dataset.sn = sn;
         
-        // LÓGICA DE VERIFICAÇÃO MELHORADA: usa normalizeId para o status
         if (itemRondaInfo && normalizeId(itemRondaInfo[STATUS_COLUMN_NAME]) === 'LOCALIZADO') {
             li.classList.add('item-localizado');
             li.textContent = `✅ ${equipamentoInfo} - Verificado em: ${itemRondaInfo[LOCATION_COLUMN_NAME] || 'N/A'}`;
@@ -274,7 +261,6 @@ function updateRondaCounter() {
     }
 }
 
-// LÓGICA DE CONFIRMAÇÃO REFORÇADA
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -290,27 +276,29 @@ if (confirmItemButton) {
 
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
+        const timestamp = new Date(); // Objeto Date completo
+
         if (itemEmRonda) {
-            console.log(`Item "${sn}" já existe na ronda. A ATUALIZAR dados.`);
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
-            itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation || originalSector;
+            itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation; // Usa o valor do campo
             itemEmRonda['Setor Original'] = originalSector;
             itemEmRonda[OBS_COLUMN_NAME] = obsInput.value.trim();
-            itemEmRonda[DATE_COLUMN_NAME] = new Date().toLocaleString('pt-BR');
+            itemEmRonda[DATE_COLUMN_NAME] = timestamp;
             itemEmRonda[PATRIMONIO_COLUMN_NAME] = patrimonio;
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
+            itemEmRonda[TAG_COLUMN_NAME] = currentEquipment[TAG_COLUMN_NAME];
 
         } else {
-            console.log(`Item "${sn}" não encontrado na ronda. A ADICIONAR novo registo.`);
             rondaData.push({
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
                 'Equipamento': currentEquipment.Equipamento,
                 [STATUS_COLUMN_NAME]: 'Localizado',
                 'Setor Original': originalSector,
-                [LOCATION_COLUMN_NAME]: foundLocation || originalSector,
+                [LOCATION_COLUMN_NAME]: foundLocation, // Usa o valor do campo
                 [OBS_COLUMN_NAME]: obsInput.value.trim(),
-                [DATE_COLUMN_NAME]: new Date().toLocaleString('pt-BR')
+                [DATE_COLUMN_NAME]: timestamp,
+                [TAG_COLUMN_NAME]: currentEquipment[TAG_COLUMN_NAME]
             });
         }
         
@@ -325,6 +313,7 @@ if (confirmItemButton) {
     });
 }
 
+// FUNÇÃO DE EXIBIÇÃO MELHORADA
 function displayEquipment(equipment) {
     currentEquipment = equipment;
     if (equipmentDetails) {
@@ -342,11 +331,16 @@ function displayEquipment(equipment) {
     if (searchResult) {
         searchResult.classList.remove('hidden');
     }
-    locationInput.value = '';
+
+    // LÓGICA DE LOCALIZAÇÃO INTELIGENTE
+    locationInput.value = rondaSectorSelect.value; // Preenche com o setor da ronda atual
     obsInput.value = '';
     locationInput.focus();
 }
 
+// =========================================================================
+// --- LÓGICA DE EXPORTAÇÃO (FORMATO PERSONALIZADO) ---
+// =========================================================================
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
         if (allEquipments.length === 0) {
@@ -356,11 +350,33 @@ if (exportRondaButton) {
 
         updateStatus('A gerar ficheiro atualizado...');
 
+        // Mapeia os dados da ronda para o formato de exportação desejado
+        const dataToExport = rondaData.map(item => {
+            const timestamp = item[DATE_COLUMN_NAME] ? new Date(item[DATE_COLUMN_NAME]) : null;
+            
+            return {
+                'Tag': item[TAG_COLUMN_NAME] || '',
+                'Equipamento': item['Equipamento'] || '',
+                'Setor': item['Setor Original'] || '',
+                'Nº de Série': item[SERIAL_COLUMN_NAME] || '',
+                'Patrimônio': item[PATRIMONIO_COLUMN_NAME] || '',
+                'Localização': item[LOCATION_COLUMN_NAME] || '',
+                'Status': item[STATUS_COLUMN_NAME] || '',
+                'Observações': item[OBS_COLUMN_NAME] || '',
+                'Data da Ronda': timestamp ? timestamp.toLocaleDateString('pt-BR') : '',
+                'Hora da Ronda': timestamp ? timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''
+            };
+        });
+
         const workbook = XLSX.utils.book_new();
+        
+        // Aba de Equipamentos (sem alterações)
         const wsEquipamentos = XLSX.utils.json_to_sheet(allEquipments);
         XLSX.utils.book_append_sheet(workbook, wsEquipamentos, EQUIP_SHEET_NAME);
 
-        const wsRonda = XLSX.utils.json_to_sheet(rondaData);
+        // Aba de Ronda (com formato e ordem personalizados)
+        const headerOrder = ['Tag', 'Equipamento', 'Setor', 'Nº de Série', 'Patrimônio', 'Localização', 'Status', 'Observações', 'Data da Ronda', 'Hora da Ronda'];
+        const wsRonda = XLSX.utils.json_to_sheet(dataToExport, { header: headerOrder });
         XLSX.utils.book_append_sheet(workbook, wsRonda, RONDA_SHEET_NAME);
 
         const dataFormatada = new Date().toISOString().slice(0, 10);
