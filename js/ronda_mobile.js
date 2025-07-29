@@ -18,6 +18,7 @@ const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
 const STATUS_COLUMN_NAME = 'Status';
 const LOCATION_COLUMN_NAME = 'Localização Encontrada';
+const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado'; // NOVO: Coluna para o setor da ronda
 const DATE_COLUMN_NAME = 'timestamp'; // Armazena o objeto Date completo
 const OBS_COLUMN_NAME = 'Observações';
 const TAG_COLUMN_NAME = 'TAG'; // Coluna TAG no arquivo mestre
@@ -273,6 +274,7 @@ if (confirmItemButton) {
         const originalSector = String(currentEquipment.Setor || '').trim();
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
+        const currentRondaSector = rondaSectorSelect.value; // Captura o setor da ronda atual
 
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
@@ -280,7 +282,8 @@ if (confirmItemButton) {
 
         if (itemEmRonda) {
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
-            itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation; // Usa o valor do campo
+            itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation;
+            itemEmRonda[FOUND_SECTOR_COLUMN_NAME] = currentRondaSector; // ATUALIZA o setor localizado
             itemEmRonda['Setor Original'] = originalSector;
             itemEmRonda[OBS_COLUMN_NAME] = obsInput.value.trim();
             itemEmRonda[DATE_COLUMN_NAME] = timestamp;
@@ -295,7 +298,8 @@ if (confirmItemButton) {
                 'Equipamento': currentEquipment.Equipamento,
                 [STATUS_COLUMN_NAME]: 'Localizado',
                 'Setor Original': originalSector,
-                [LOCATION_COLUMN_NAME]: foundLocation, // Usa o valor do campo
+                [LOCATION_COLUMN_NAME]: foundLocation,
+                [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector, // ADICIONA o setor localizado
                 [OBS_COLUMN_NAME]: obsInput.value.trim(),
                 [DATE_COLUMN_NAME]: timestamp,
                 [TAG_COLUMN_NAME]: currentEquipment[TAG_COLUMN_NAME]
@@ -313,7 +317,6 @@ if (confirmItemButton) {
     });
 }
 
-// FUNÇÃO DE EXIBIÇÃO MELHORADA
 function displayEquipment(equipment) {
     currentEquipment = equipment;
     if (equipmentDetails) {
@@ -332,19 +335,18 @@ function displayEquipment(equipment) {
         searchResult.classList.remove('hidden');
     }
 
-    // LÓGICA DE LOCALIZAÇÃO INTELIGENTE
-    locationInput.value = rondaSectorSelect.value; // Preenche com o setor da ronda atual
+    locationInput.value = ''; // Limpa o campo para o utilizador digitar o leito/local específico
     obsInput.value = '';
     locationInput.focus();
 }
 
 // =========================================================================
-// --- LÓGICA DE EXPORTAÇÃO (FORMATO PERSONALIZADO) ---
+// --- LÓGICA DE EXPORTAÇÃO (FORMATO PERSONALIZADO E APENAS UMA ABA) ---
 // =========================================================================
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
-        if (allEquipments.length === 0) {
-            alert("Nenhum dado de equipamento carregado para exportar.");
+        if (rondaData.length === 0) {
+            alert("Nenhum dado de ronda para exportar.");
             return;
         }
 
@@ -361,6 +363,7 @@ if (exportRondaButton) {
                 'Nº de Série': item[SERIAL_COLUMN_NAME] || '',
                 'Patrimônio': item[PATRIMONIO_COLUMN_NAME] || '',
                 'Localização': item[LOCATION_COLUMN_NAME] || '',
+                'Setor Localizado': item[FOUND_SECTOR_COLUMN_NAME] || '', // NOVO CAMPO
                 'Status': item[STATUS_COLUMN_NAME] || '',
                 'Observações': item[OBS_COLUMN_NAME] || '',
                 'Data da Ronda': timestamp ? timestamp.toLocaleDateString('pt-BR') : '',
@@ -370,19 +373,15 @@ if (exportRondaButton) {
 
         const workbook = XLSX.utils.book_new();
         
-        // Aba de Equipamentos (sem alterações)
-        const wsEquipamentos = XLSX.utils.json_to_sheet(allEquipments);
-        XLSX.utils.book_append_sheet(workbook, wsEquipamentos, EQUIP_SHEET_NAME);
-
         // Aba de Ronda (com formato e ordem personalizados)
-        const headerOrder = ['Tag', 'Equipamento', 'Setor', 'Nº de Série', 'Patrimônio', 'Localização', 'Status', 'Observações', 'Data da Ronda', 'Hora da Ronda'];
+        const headerOrder = ['Tag', 'Equipamento', 'Setor', 'Nº de Série', 'Patrimônio', 'Localização', 'Setor Localizado', 'Status', 'Observações', 'Data da Ronda', 'Hora da Ronda'];
         const wsRonda = XLSX.utils.json_to_sheet(dataToExport, { header: headerOrder });
         XLSX.utils.book_append_sheet(workbook, wsRonda, RONDA_SHEET_NAME);
 
         const dataFormatada = new Date().toISOString().slice(0, 10);
-        const fileName = currentFile ? currentFile.name : `Ronda_Atualizada_${dataFormatada}.xlsx`;
+        const fileName = `Ronda_Exportada_${dataFormatada}.xlsx`; // Nome de ficheiro mais genérico
         
         XLSX.writeFile(workbook, fileName);
-        updateStatus('Ficheiro de ronda atualizado e salvo com sucesso!', false);
+        updateStatus('Ficheiro de ronda exportado com sucesso!', false);
     });
 }
