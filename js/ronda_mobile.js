@@ -102,24 +102,32 @@ if (loadFileButton) {
                             if (!sn) return null; // Ignora linhas sem SN
 
                             const masterInfo = mainEquipmentsBySN.get(sn);
-                            if (!masterInfo) return rondaItem; // Mantém o item da ronda mesmo que não esteja no mestre
 
                             // Converte data/hora antigas para timestamp
                             let timestamp = null;
-                            if (rondaItem[EXPORT_DATE_COLUMN]) {
-                                const dateParts = String(rondaItem[EXPORT_DATE_COLUMN]).split('/');
-                                const timeParts = String(rondaItem[EXPORT_TIME_COLUMN] || '00:00').split(':');
+                            const dateValue = rondaItem[EXPORT_DATE_COLUMN];
+                            const timeValue = rondaItem[EXPORT_TIME_COLUMN];
+
+                            if (dateValue instanceof Date) {
+                                timestamp = dateValue;
+                            } else if (typeof dateValue === 'string' && dateValue.includes('/')) {
+                                const dateParts = dateValue.split('/');
+                                const timeParts = String(timeValue || '00:00').split(':');
                                 if (dateParts.length === 3) {
                                     // Formato DD/MM/YYYY
                                     timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0] || 0, timeParts[1] || 0);
                                 }
                             }
+                            
+                            if (!timestamp && rondaItem[DATE_COLUMN_NAME]) {
+                                timestamp = new Date(rondaItem[DATE_COLUMN_NAME]);
+                            }
 
                             // Junta a informação do mestre (como Tag e Setor Original) com a da ronda
                             return {
-                                ...masterInfo, // Base com Tag, Setor Original, etc.
+                                ...(masterInfo || {}), // Base com Tag, Setor Original, etc.
                                 ...rondaItem,  // Sobrescreve com os dados da ronda (Status, Localização, etc.)
-                                [DATE_COLUMN_NAME]: timestamp || rondaItem[DATE_COLUMN_NAME] // Usa a data convertida ou a existente
+                                [DATE_COLUMN_NAME]: timestamp // Usa a data convertida ou a existente
                             };
                         })
                         .filter(Boolean); // Remove itens nulos
