@@ -84,6 +84,7 @@ if (loadFileButton) {
                     console.warn('A aba "Ronda" não retornou um array. A iniciar com lista vazia.');
                     rondaData = [];
                 }
+                // MENSAGEM DE DIAGNÓSTICO
                 console.log(`Dados da aba "Ronda" carregados. Total de ${rondaData.length} registos.`);
             } catch (e) {
                 console.warn(`Aba "${RONDA_SHEET_NAME}" não encontrada. Uma nova será criada ao salvar.`);
@@ -271,6 +272,7 @@ if (confirmItemButton) {
         // PASSO 2: Se o item FOI ENCONTRADO, ele entra neste bloco 'if'.
         if (itemEmRonda) {
             // Ação: ATUALIZAR os dados do item que já existe.
+            // MENSAGEM DE DIAGNÓSTICO
             console.log(`Item "${sn}" já existe na ronda. A ATUALIZAR dados.`);
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
             itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation;
@@ -285,6 +287,7 @@ if (confirmItemButton) {
         // PASSO 3: Se o item NÃO FOI ENCONTRADO, ele entra neste bloco 'else'.
         } else {
             // Ação: ADICIONAR um novo registo à lista de dados da ronda.
+            // MENSAGEM DE DIAGNÓSTICO
             console.log(`Item "${sn}" não encontrado na ronda. A ADICIONAR novo registo.`);
             rondaData.push({
                 [SERIAL_COLUMN_NAME]: sn,
@@ -342,6 +345,7 @@ if (exportRondaButton) {
             return;
         }
         
+        // MENSAGEM DE DIAGNÓSTICO
         console.log(`A exportar ${rondaData.length} registos da ronda.`);
         updateStatus('A gerar ficheiro atualizado...');
 
