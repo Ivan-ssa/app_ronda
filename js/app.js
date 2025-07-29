@@ -13,21 +13,7 @@ let currentEquipment = null;
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
 const loadFileButton = document.getElementById('loadFileButton');
-const statusMessage = document.getElementById('statusMessage');
-const sectorSelectorSection = document.getElementById('sectorSelectorSection');
-const rondaSectorSelect = document.getElementById('rondaSectorSelect');
-const startRondaButton = document.getElementById('startRondaButton');
-const rondaSection = document.getElementById('rondaSection');
-const searchForm = document.getElementById('searchForm');
-const searchInput = document.getElementById('searchInput');
-const searchResult = document.getElementById('searchResult');
-const equipmentDetails = document.getElementById('equipmentDetails');
-const locationInput = document.getElementById('locationInput');
-const obsInput = document.getElementById('obsInput');
-const confirmItemButton = document.getElementById('confirmItemButton');
-const rondaListSection = document.getElementById('rondaListSection');
-const rondaCounter = document.getElementById('rondaCounter');
-const rondaList = document.getElementById('rondaList');
+// ... (resto dos seus elementos do DOM)
 const exportRondaButton = document.getElementById('exportRondaButton');
 
 // --- FUNÇÕES AUXILIARES ---
@@ -41,13 +27,10 @@ function normalizeId(id) {
 }
 
 function updateStatus(message, isError = false) {
-    if (statusMessage) {
-        statusMessage.textContent = message;
-        statusMessage.className = isError ? 'status error' : 'status success';
-    }
+    // ... (sua função updateStatus)
 }
 
-// --- LÓGICA DE CARREGAMENTO (OTIMIZADA) ---
+// --- LÓGICA DE CARREGAMENTO (ATUALIZADA) ---
 if (loadFileButton) {
     loadFileButton.addEventListener('click', () => {
         const file = masterFileInput.files[0];
@@ -55,23 +38,23 @@ if (loadFileButton) {
             updateStatus('Por favor, selecione um arquivo.', true);
             return;
         }
-
         updateStatus('A processar...');
         loadFileButton.disabled = true;
         
         setTimeout(async () => {
             try {
+                // --- ALTERAÇÃO AQUI: Procura pela aba "Equipamentos" ---
                 const configDeLeitura = {
-                    'Equip_VBA': ['TAG', 'Equipamento', 'Fabricante', 'Modelo', 'Setor', 'Nº Série', 'Patrimônio'],
-                    'Ronda': ['TAG', 'Equipamento', 'Fabricante', 'Modelo', 'Setor', 'Nº Série', 'Patrimônio', 'Status', 'Localização Encontrada', 'Data da Ronda', 'Observações']
+                    'Equipamentos': ['TAG', 'Equipamento', 'Fabricante', 'Modelo', 'Setor', 'Nº Série', 'Patrimônio'],
+                    'Ronda': ['SN', 'Status', 'Setor Original', 'Localização Encontrada', 'Observações']
                 };
 
                 const allSheets = await readOptimizedExcelWorkbook(file, configDeLeitura);
 
-                allEquipments = allSheets.get('Equip_VBA') || [];
+                allEquipments = allSheets.get('Equipamentos') || [];
                 previousRondaData = allSheets.get('Ronda') || [];
 
-                if (allEquipments.length === 0) throw new Error("A aba 'Equip_VBA' (ou a primeira aba) não foi encontrada ou está vazia.");
+                if (allEquipments.length === 0) throw new Error("A aba 'Equipamentos' não foi encontrada ou está vazia.");
                 
                 mainEquipmentsBySN.clear();
                 allEquipments.forEach(eq => {
@@ -93,112 +76,7 @@ if (loadFileButton) {
     });
 }
 
-function populateSectorSelect(equipments) {
-    const sectors = equipments.map(eq => String(eq.Setor || '').trim()).filter(Boolean);
-    const uniqueSectors = [...new Set(sectors)].sort();
-    rondaSectorSelect.innerHTML = '<option value="">Selecione um setor...</option>';
-    uniqueSectors.forEach(sector => {
-        const option = document.createElement('option');
-        option.value = sector;
-        option.textContent = sector;
-        rondaSectorSelect.appendChild(option);
-    });
-}
-
-function startRonda(sector) {
-    if (!sector) {
-        alert("Por favor, selecione um setor para iniciar a ronda.");
-        return;
-    }
-    currentRondaItems = allEquipments.filter(eq => String(eq.Setor || '').trim() === sector);
-    itemsConfirmedInRonda.clear();
-    rondaSection.classList.remove('hidden');
-    rondaListSection.classList.remove('hidden');
-    updateRondaCounter();
-    if (rondaList) rondaList.innerHTML = '';
-    searchInput.value = '';
-    searchInput.focus();
-}
-
-function updateRondaCounter() {
-    if (rondaCounter) {
-        rondaCounter.textContent = `${itemsConfirmedInRonda.size} de ${currentRondaItems.length}`;
-    }
-}
-
-function displayEquipment(equipment) {
-    currentEquipment = equipment;
-    if (equipmentDetails) {
-        equipmentDetails.innerHTML = `
-            <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
-            <p><strong>Nº Série:</strong> ${equipment['Nº Série'] || 'N/A'}</p>
-            <p><strong>Setor Original:</strong> ${equipment.Setor || 'N/A'}</p>
-        `;
-    }
-    if (searchResult) searchResult.classList.remove('hidden');
-    locationInput.value = '';
-    obsInput.value = '';
-}
-
-if (startRondaButton) {
-    startRondaButton.addEventListener('click', () => {
-        startRonda(rondaSectorSelect.value);
-    });
-}
-
-if (searchForm) {
-    searchForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const searchTerm = normalizeId(searchInput.value);
-        if (!searchTerm) return;
-        const found = mainEquipmentsBySN.get(searchTerm) || allEquipments.find(eq => normalizeId(eq.Patrimonio) === searchTerm);
-        if (found) {
-            displayEquipment(found);
-        } else {
-            alert('Equipamento não encontrado no arquivo mestre.');
-            searchResult.classList.add('hidden');
-            currentEquipment = null;
-        }
-    });
-}
-
-if (confirmItemButton) {
-    confirmItemButton.addEventListener('click', () => {
-        if (!currentEquipment) return;
-        const sn = normalizeId(currentEquipment['Nº Série']);
-        const originalSector = String(currentEquipment.Setor || '').trim();
-        const foundLocation = locationInput.value.trim();
-        const rondaInfo = {
-            'Nº Série': sn,
-            'Equipamento': currentEquipment.Equipamento,
-            'Setor': originalSector,
-            'Status': 'Localizado',
-            'Localização Encontrada': foundLocation,
-            'Observações': obsInput.value.trim(),
-            'divergence': foundLocation !== '' && normalizeId(foundLocation) !== normalizeId(originalSector)
-        };
-        itemsConfirmedInRonda.set(sn, rondaInfo);
-        
-        const li = document.createElement('li');
-        li.dataset.sn = sn;
-        li.textContent = `${rondaInfo.Equipamento} (SN: ${sn})`;
-        if (rondaInfo.divergence) {
-            li.classList.add('divergence');
-        } else {
-            li.classList.add('confirmed');
-        }
-        rondaList.appendChild(li);
-
-        alert(`${currentEquipment.Equipamento} confirmado!`);
-        searchInput.value = '';
-        searchInput.focus();
-        searchResult.classList.add('hidden');
-        currentEquipment = null;
-        updateRondaCounter();
-    });
-}
-
-// --- LÓGICA DE EXPORTAÇÃO ---
+// --- LÓGICA DE EXPORTAÇÃO (ATUALIZADA PARA O NOVO FORMATO) ---
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
         if (itemsConfirmedInRonda.size === 0 && previousRondaData.length === 0) {
@@ -207,43 +85,56 @@ if (exportRondaButton) {
         }
 
         const rondaFinalMap = new Map();
+        // 1. Carrega os dados da ronda anterior para o mapa
         previousRondaData.forEach(item => {
-            const sn = normalizeId(item['Nº Série'] || item.SN);
+            const sn = normalizeId(item['SN'] || item['Nº Série']);
             if (sn) rondaFinalMap.set(sn, item);
         });
 
-        const dataDaRonda = new Date().toLocaleDateString('pt-BR');
+        // 2. Mescla os dados da ronda atual (do telemóvel)
         itemsConfirmedInRonda.forEach((newInfo, sn) => {
             const itemExistente = rondaFinalMap.get(sn) || {};
-            const masterInfo = mainEquipmentsBySN.get(sn) || {};
-
+            
+            // Atualiza (ou adiciona) o item com os novos dados focados
             rondaFinalMap.set(sn, {
-                ...itemExistente,
-                ...masterInfo,
-                'Nº Série': sn,
-                'Setor': newInfo.Setor,
+                ...itemExistente, // Mantém dados antigos se houver (não relevante para este formato simples)
+                'SN': newInfo['Nº Série'],
                 'Status': newInfo.Status,
+                'Setor Original': newInfo.Setor, // Renomeado de 'Setor Original' para 'Setor' na ronda
                 'Localização Encontrada': newInfo['Localização Encontrada'],
-                'Observações': newInfo.Observações,
-                'Data da Ronda': dataDaRonda
+                'Observações': newInfo.Observações
             });
         });
 
         const dadosParaExportar = Array.from(rondaFinalMap.values());
+        
+        // --- ALTERAÇÃO AQUI: Define os cabeçalhos exatos do anexo 2 ---
         const headers = [
-            'TAG', 'Equipamento', 'Fabricante', 'Modelo', 'Setor', 'Nº Série', 'Patrimônio', 'Status', 'Localização Encontrada', 'Data da Ronda', 'Observações'
+            'SN', 
+            'Status', 
+            'Setor Original', 
+            'Localização Encontrada', 
+            'Observações'
         ];
 
+        // 3. Formata os dados para a planilha, garantindo a ordem das 5 colunas
         const dadosParaPlanilha = dadosParaExportar.map(item => {
             return headers.map(header => item[header] || '');
         });
         dadosParaPlanilha.unshift(headers);
 
+        // 4. Gera e descarrega o ficheiro Excel
         const worksheet = XLSX.utils.aoa_to_sheet(dadosParaPlanilha);
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Ronda');
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Ronda'); // O nome da aba é 'Ronda'
 
-        const nomeFicheiro = `Ronda_Atualizada_${dataDaRonda.replace(/\//g, '-')}.xlsx`;
+        const dataFormatada = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+        const nomeFicheiro = `Ronda_Atualizada_${dataFormatada}.xlsx`;
         XLSX.writeFile(workbook, nomeFicheiro);
     });
 }
+
+
+// --- FUNÇÕES RESTANTES (sem alterações) ---
+// (Copie e cole aqui o resto das suas funções: populateSectorSelect, startRonda, etc.)
+// ...
