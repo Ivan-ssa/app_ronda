@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM EXPORTAÇÃO E LÓGICA DE LOCALIZAÇÃO CORRIGIDAS)
+// js/ronda_mobile.js (VERSÃO COM LÓGICA DE ATUALIZAÇÃO DETALHADA)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -18,10 +18,10 @@ const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
 const INACTIVE_COLUMN_NAME = 'Inativo';
 const STATUS_COLUMN_NAME = 'Status';
 const LOCATION_COLUMN_NAME = 'Localização Encontrada';
-const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado'; // NOVO: Coluna para o setor da ronda
-const DATE_COLUMN_NAME = 'timestamp'; // Armazena o objeto Date completo
+const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado';
+const DATE_COLUMN_NAME = 'timestamp';
 const OBS_COLUMN_NAME = 'Observações';
-const TAG_COLUMN_NAME = 'TAG'; // Coluna TAG no arquivo mestre
+const TAG_COLUMN_NAME = 'TAG';
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -262,6 +262,9 @@ function updateRondaCounter() {
     }
 }
 
+// =========================================================================
+// --- LÓGICA DE CONFIRMAÇÃO: ATUALIZAR OU ADICIONAR (UPSERT) ---
+// =========================================================================
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -274,16 +277,20 @@ if (confirmItemButton) {
         const originalSector = String(currentEquipment.Setor || '').trim();
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
-        const currentRondaSector = rondaSectorSelect.value; // Captura o setor da ronda atual
+        const currentRondaSector = rondaSectorSelect.value;
 
+        // PASSO 1: Procurar se o equipamento já existe na lista de dados da ronda.
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
-        const timestamp = new Date(); // Objeto Date completo
+        const timestamp = new Date();
 
+        // PASSO 2: Se o item FOI ENCONTRADO, ele entra neste bloco 'if'.
         if (itemEmRonda) {
+            // Ação: ATUALIZAR os dados do item que já existe.
+            console.log(`Item "${sn}" já existe na ronda. A ATUALIZAR dados.`);
             itemEmRonda[STATUS_COLUMN_NAME] = 'Localizado';
             itemEmRonda[LOCATION_COLUMN_NAME] = foundLocation;
-            itemEmRonda[FOUND_SECTOR_COLUMN_NAME] = currentRondaSector; // ATUALIZA o setor localizado
+            itemEmRonda[FOUND_SECTOR_COLUMN_NAME] = currentRondaSector;
             itemEmRonda['Setor Original'] = originalSector;
             itemEmRonda[OBS_COLUMN_NAME] = obsInput.value.trim();
             itemEmRonda[DATE_COLUMN_NAME] = timestamp;
@@ -291,7 +298,10 @@ if (confirmItemButton) {
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
             itemEmRonda[TAG_COLUMN_NAME] = currentEquipment[TAG_COLUMN_NAME];
 
+        // PASSO 3: Se o item NÃO FOI ENCONTRADO, ele entra neste bloco 'else'.
         } else {
+            // Ação: ADICIONAR um novo registo à lista de dados da ronda.
+            console.log(`Item "${sn}" não encontrado na ronda. A ADICIONAR novo registo.`);
             rondaData.push({
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
@@ -299,7 +309,7 @@ if (confirmItemButton) {
                 [STATUS_COLUMN_NAME]: 'Localizado',
                 'Setor Original': originalSector,
                 [LOCATION_COLUMN_NAME]: foundLocation,
-                [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector, // ADICIONA o setor localizado
+                [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector,
                 [OBS_COLUMN_NAME]: obsInput.value.trim(),
                 [DATE_COLUMN_NAME]: timestamp,
                 [TAG_COLUMN_NAME]: currentEquipment[TAG_COLUMN_NAME]
@@ -335,14 +345,11 @@ function displayEquipment(equipment) {
         searchResult.classList.remove('hidden');
     }
 
-    locationInput.value = ''; // Limpa o campo para o utilizador digitar o leito/local específico
+    locationInput.value = '';
     obsInput.value = '';
     locationInput.focus();
 }
 
-// =========================================================================
-// --- LÓGICA DE EXPORTAÇÃO (FORMATO PERSONALIZADO E APENAS UMA ABA) ---
-// =========================================================================
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
         if (rondaData.length === 0) {
@@ -352,7 +359,6 @@ if (exportRondaButton) {
 
         updateStatus('A gerar ficheiro atualizado...');
 
-        // Mapeia os dados da ronda para o formato de exportação desejado
         const dataToExport = rondaData.map(item => {
             const timestamp = item[DATE_COLUMN_NAME] ? new Date(item[DATE_COLUMN_NAME]) : null;
             
@@ -363,7 +369,7 @@ if (exportRondaButton) {
                 'Nº de Série': item[SERIAL_COLUMN_NAME] || '',
                 'Patrimônio': item[PATRIMONIO_COLUMN_NAME] || '',
                 'Localização': item[LOCATION_COLUMN_NAME] || '',
-                'Setor Localizado': item[FOUND_SECTOR_COLUMN_NAME] || '', // NOVO CAMPO
+                'Setor Localizado': item[FOUND_SECTOR_COLUMN_NAME] || '',
                 'Status': item[STATUS_COLUMN_NAME] || '',
                 'Observações': item[OBS_COLUMN_NAME] || '',
                 'Data da Ronda': timestamp ? timestamp.toLocaleDateString('pt-BR') : '',
@@ -373,13 +379,12 @@ if (exportRondaButton) {
 
         const workbook = XLSX.utils.book_new();
         
-        // Aba de Ronda (com formato e ordem personalizados)
         const headerOrder = ['Tag', 'Equipamento', 'Setor', 'Nº de Série', 'Patrimônio', 'Localização', 'Setor Localizado', 'Status', 'Observações', 'Data da Ronda', 'Hora da Ronda'];
         const wsRonda = XLSX.utils.json_to_sheet(dataToExport, { header: headerOrder });
         XLSX.utils.book_append_sheet(workbook, wsRonda, RONDA_SHEET_NAME);
 
         const dataFormatada = new Date().toISOString().slice(0, 10);
-        const fileName = `Ronda_Exportada_${dataFormatada}.xlsx`; // Nome de ficheiro mais genérico
+        const fileName = `Ronda_Exportada_${dataFormatada}.xlsx`;
         
         XLSX.writeFile(workbook, fileName);
         updateStatus('Ficheiro de ronda exportado com sucesso!', false);
