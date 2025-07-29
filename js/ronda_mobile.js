@@ -1,4 +1,4 @@
-// js/ronda_mobile.js (VERSÃO COM NOMES DE COLUNA CORRIGIDOS)
+// js/ronda_mobile.js (VERSÃO COM BUSCA DE PATRIMÔNIO CORRIGIDA)
 
 import { readExcelFile } from './excelReader.js'; 
 
@@ -10,12 +10,12 @@ let currentRondaItems = [];
 let currentEquipment = null;
 let currentFile = null;
 
-// --- Nomes das Abas e Colunas (CORRIGIDOS) ---
+// --- Nomes das Abas e Colunas ---
 const EQUIP_SHEET_NAME = 'Equipamentos';
 const RONDA_SHEET_NAME = 'Ronda';
-const SERIAL_COLUMN_NAME = 'Nº Série';      // Nome da coluna de Nº de Série
-const PATRIMONIO_COLUMN_NAME = 'Patrimônio'; // Nome da coluna de Patrimônio
-const INACTIVE_COLUMN_NAME = 'Inativo';     // Nome da coluna de Inativos
+const SERIAL_COLUMN_NAME = 'Nº Série';
+const PATRIMONIO_COLUMN_NAME = 'Patrimônio';
+const INACTIVE_COLUMN_NAME = 'Inativo';
 
 // --- ELEMENTOS DO DOM ---
 const masterFileInput = document.getElementById('masterFileInput');
@@ -78,10 +78,10 @@ if (loadFileButton) {
             }
             
             if (allEquipments.length > 0 && allEquipments[0][SERIAL_COLUMN_NAME] === undefined) {
-                 updateStatus(`Aviso: A coluna "${SERIAL_COLUMN_NAME}" não foi encontrada. A busca por Nº de Série pode falhar.`, true);
+                 updateStatus(`Aviso: A coluna "${SERIAL_COLUMN_NAME}" não foi encontrada.`, true);
             }
             if (allEquipments.length > 0 && allEquipments[0][PATRIMONIO_COLUMN_NAME] === undefined) {
-                 updateStatus(`Aviso: A coluna "${PATRIMONIO_COLUMN_NAME}" não foi encontrada. A busca por Patrimônio pode falhar.`, true);
+                 updateStatus(`Aviso: A coluna "${PATRIMONIO_COLUMN_NAME}" não foi encontrada.`, true);
             }
 
             mainEquipmentsBySN.clear();
@@ -113,7 +113,7 @@ if (startRondaButton) {
 }
 
 // =========================================================================
-// --- LÓGICA DE BUSCA (FINAL) ---
+// --- LÓGICA DE BUSCA (COM ZEROS À ESQUERDA CORRIGIDO) ---
 // =========================================================================
 if (searchForm) {
     searchForm.addEventListener('submit', (e) => {
@@ -124,15 +124,18 @@ if (searchForm) {
         // 1. Tenta encontrar pelo Nº de Série exato
         let found = mainEquipmentsBySN.get(searchTerm);
 
-        // 2. Se não encontrou, tenta pelo número do Patrimônio
+        // 2. Se não encontrou, tenta pelo número do Patrimônio (comparando como número)
         if (!found) {
-            const searchNumbers = extractNumbers(searchTerm);
-            if (searchNumbers) {
+            const searchAsNumber = parseInt(extractNumbers(searchTerm), 10);
+            
+            if (!isNaN(searchAsNumber)) { // Procede apenas se o termo de busca for um número válido
                 found = allEquipments.find(eq => {
                     const patrimonioValue = eq[PATRIMONIO_COLUMN_NAME];
                     if (!patrimonioValue) return false;
-                    const patrimonioNumbers = extractNumbers(String(patrimonioValue));
-                    return patrimonioNumbers && patrimonioNumbers === searchNumbers;
+                    
+                    const patrimonioAsNumber = parseInt(extractNumbers(String(patrimonioValue)), 10);
+                    
+                    return !isNaN(patrimonioAsNumber) && patrimonioAsNumber === searchAsNumber;
                 });
             }
         }
@@ -269,6 +272,9 @@ function updateRondaCounter() {
     }
 }
 
+// =========================================================================
+// --- LÓGICA DE CONFIRMAÇÃO (ATUALIZA OU ADICIONA) ---
+// =========================================================================
 if (confirmItemButton) {
     confirmItemButton.addEventListener('click', () => {
         if (!currentEquipment) return;
@@ -282,9 +288,11 @@ if (confirmItemButton) {
         const foundLocation = locationInput.value.trim().toUpperCase();
         const patrimonio = normalizeId(currentEquipment[PATRIMONIO_COLUMN_NAME]);
 
+        // Procura se o item já existe na lista de dados da ronda
         let itemEmRonda = rondaData.find(item => normalizeId(item[SERIAL_COLUMN_NAME]) === sn);
 
-        if (itemEmRonda) {
+        if (itemEmRonda) { // Se JÁ EXISTE, apenas atualiza os campos
+            console.log("Item encontrado na ronda. Atualizando:", sn);
             itemEmRonda.Status = 'Localizado';
             itemEmRonda['Localização Encontrada'] = foundLocation || originalSector;
             itemEmRonda['Setor Original'] = originalSector;
@@ -292,7 +300,9 @@ if (confirmItemButton) {
             itemEmRonda['Data da Verificação'] = new Date().toLocaleString('pt-BR');
             itemEmRonda[PATRIMONIO_COLUMN_NAME] = patrimonio;
             itemEmRonda.Equipamento = currentEquipment.Equipamento;
-        } else {
+
+        } else { // Se NÃO EXISTE, adiciona um novo registro na lista
+            console.log("Item não encontrado na ronda. Adicionando novo:", sn);
             rondaData.push({
                 [SERIAL_COLUMN_NAME]: sn,
                 [PATRIMONIO_COLUMN_NAME]: patrimonio,
