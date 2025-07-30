@@ -59,8 +59,21 @@ function extractNumbers(text) {
 
 function getSerialNumber(equipment) {
     if (!equipment) return null;
-    const sn = equipment[SERIAL_COLUMN_NAME] || equipment['Nº Série'];
+    const sn = equipment['Nº de Série'] || equipment['Nº Série'];
     return normalizeId(sn);
+}
+
+// NOVA FUNÇÃO ROBUSTA PARA OBTER A TAG
+function getTag(equipment) {
+    if (!equipment) return '';
+    // Itera sobre as chaves do objeto para encontrar a tag de forma flexível,
+    // ignorando maiúsculas/minúsculas e espaços.
+    for (const key in equipment) {
+        if (key.trim().toLowerCase() === 'tag') {
+            return equipment[key];
+        }
+    }
+    return ''; // Retorna vazio se não encontrar
 }
 
 function updateStatus(message, isError = false) {
@@ -94,16 +107,14 @@ if (loadFileButton) {
             try {
                 let rawRondaData = await readExcelFile(file, RONDA_SHEET_NAME);
                 
-                // LÓGICA DE ENRIQUECIMENTO E LIMPEZA
                 if (Array.isArray(rawRondaData)) {
                     rondaData = rawRondaData
                         .map(rondaItem => {
                             const sn = getSerialNumber(rondaItem);
-                            if (!sn) return null; // Ignora linhas sem SN
+                            if (!sn) return null;
 
                             const masterInfo = mainEquipmentsBySN.get(sn);
 
-                            // Converte data/hora antigas para timestamp
                             let timestamp = null;
                             const dateValue = rondaItem[EXPORT_DATE_COLUMN];
                             const timeValue = rondaItem[EXPORT_TIME_COLUMN];
@@ -114,7 +125,6 @@ if (loadFileButton) {
                                 const dateParts = dateValue.split('/');
                                 const timeParts = String(timeValue || '00:00').split(':');
                                 if (dateParts.length === 3) {
-                                    // Formato DD/MM/YYYY
                                     timestamp = new Date(dateParts[2], dateParts[1] - 1, dateParts[0], timeParts[0] || 0, timeParts[1] || 0);
                                 }
                             }
@@ -123,14 +133,13 @@ if (loadFileButton) {
                                 timestamp = new Date(rondaItem[DATE_COLUMN_NAME]);
                             }
 
-                            // Junta a informação do mestre (como Tag e Setor Original) com a da ronda
                             return {
-                                ...(masterInfo || {}), // Base com Tag, Setor Original, etc.
-                                ...rondaItem,  // Sobrescreve com os dados da ronda (Status, Localização, etc.)
-                                [DATE_COLUMN_NAME]: timestamp // Usa a data convertida ou a existente
+                                ...(masterInfo || {}),
+                                ...rondaItem,
+                                [DATE_COLUMN_NAME]: timestamp
                             };
                         })
-                        .filter(Boolean); // Remove itens nulos
+                        .filter(Boolean);
                 } else {
                     rondaData = [];
                 }
@@ -304,7 +313,6 @@ if (confirmItemButton) {
 
         let itemEmRonda = rondaData.find(item => getSerialNumber(item) === sn);
 
-        // Cria um objeto com todos os dados do equipamento mestre
         const dataObject = {
             ...currentEquipment, 
             [STATUS_COLUMN_NAME]: 'Localizado',
@@ -315,10 +323,8 @@ if (confirmItemButton) {
         };
 
         if (itemEmRonda) {
-            // Se o item já existe, atualiza-o com os novos dados
             Object.assign(itemEmRonda, dataObject);
         } else {
-            // Se é um item novo, adiciona o objeto completo à lista
             rondaData.push(dataObject);
         }
         
@@ -333,17 +339,17 @@ if (confirmItemButton) {
     });
 }
 
-// FUNÇÃO DE EXIBIÇÃO CORRIGIDA PARA MOSTRAR A TAG
+// FUNÇÃO DE EXIBIÇÃO CORRIGIDA PARA USAR A FUNÇÃO getTag
 function displayEquipment(equipment) {
     currentEquipment = equipment;
     const sn = getSerialNumber(equipment);
-    const tag = equipment[TAG_COLUMN_NAME] || 'N/A'; // Pega a Tag para exibição
+    const tag = getTag(equipment) || 'N/A'; // Usa a nova função robusta
 
     if (equipmentDetails) {
         const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
         const serialNumberDisplay = sn 
             ? sn 
-            : '<span style="color:red; font-weight:bold;">EM FALTA - VERIFICAR FICHEIRO</span>';
+            : '<span style="color:red; font-weight:bold;">EM FALTA</span>';
 
         equipmentDetails.innerHTML = `
             <p><strong>Tag:</strong> ${tag}</p>
@@ -370,6 +376,7 @@ function displayEquipment(equipment) {
     }
 }
 
+// FUNÇÃO DE EXPORTAÇÃO CORRIGIDA PARA USAR A FUNÇÃO getTag
 if (exportRondaButton) {
     exportRondaButton.addEventListener('click', () => {
         if (rondaData.length === 0) {
@@ -381,9 +388,9 @@ if (exportRondaButton) {
             const timestamp = item[DATE_COLUMN_NAME] ? new Date(item[DATE_COLUMN_NAME]) : null;
             
             return {
-                [TAG_COLUMN_NAME]: item[TAG_COLUMN_NAME] || '',
+                [TAG_COLUMN_NAME]: getTag(item) || '', // Usa a nova função robusta
                 'Equipamento': item['Equipamento'] || '',
-                'Setor': item['Setor'] || '', // Usa o 'Setor' do mestre
+                'Setor': item['Setor'] || '',
                 [SERIAL_COLUMN_NAME]: getSerialNumber(item) || '',
                 [PATRIMONIO_COLUMN_NAME]: item[PATRIMONIO_COLUMN_NAME] || '',
                 [LOCATION_COLUMN_NAME]: item[LOCATION_COLUMN_NAME] || '',
