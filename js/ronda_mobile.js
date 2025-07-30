@@ -19,7 +19,7 @@ const INACTIVE_COLUMN_NAME = 'Inativo';
 const STATUS_COLUMN_NAME = 'Status';
 const LOCATION_COLUMN_NAME = 'Localização';
 const FOUND_SECTOR_COLUMN_NAME = 'Setor Localizado';
-const DATE_COLUMN_NAME = 'timestamp';
+const DATE_COLUMN_NAME = 'timestamp'; // Coluna interna para o objeto Date
 const OBS_COLUMN_NAME = 'Observações';
 const TAG_COLUMN_NAME = 'Tag';
 const EXPORT_DATE_COLUMN = 'Data da Ronda';
@@ -304,8 +304,9 @@ if (confirmItemButton) {
 
         let itemEmRonda = rondaData.find(item => getSerialNumber(item) === sn);
 
+        // Cria um objeto com todos os dados do equipamento mestre
         const dataObject = {
-            ...currentEquipment, // Pega todos os dados do mestre (Tag, Setor Original, etc.)
+            ...currentEquipment, 
             [STATUS_COLUMN_NAME]: 'Localizado',
             [LOCATION_COLUMN_NAME]: foundLocation,
             [FOUND_SECTOR_COLUMN_NAME]: currentRondaSector,
@@ -314,8 +315,10 @@ if (confirmItemButton) {
         };
 
         if (itemEmRonda) {
+            // Se o item já existe, atualiza-o com os novos dados
             Object.assign(itemEmRonda, dataObject);
         } else {
+            // Se é um item novo, adiciona o objeto completo à lista
             rondaData.push(dataObject);
         }
         
@@ -330,9 +333,11 @@ if (confirmItemButton) {
     });
 }
 
+// FUNÇÃO DE EXIBIÇÃO CORRIGIDA PARA MOSTRAR A TAG
 function displayEquipment(equipment) {
     currentEquipment = equipment;
     const sn = getSerialNumber(equipment);
+    const tag = equipment[TAG_COLUMN_NAME] || 'N/A'; // Pega a Tag para exibição
 
     if (equipmentDetails) {
         const isInativo = normalizeId(equipment[INACTIVE_COLUMN_NAME]) === 'SIM';
@@ -341,6 +346,7 @@ function displayEquipment(equipment) {
             : '<span style="color:red; font-weight:bold;">EM FALTA - VERIFICAR FICHEIRO</span>';
 
         equipmentDetails.innerHTML = `
+            <p><strong>Tag:</strong> ${tag}</p>
             <p><strong>Equipamento:</strong> ${equipment.Equipamento || 'N/A'}</p>
             <p><strong>Nº Série:</strong> ${serialNumberDisplay}</p>
             <p><strong>Património:</strong> ${equipment[PATRIMONIO_COLUMN_NAME] || 'N/A'}</p>
